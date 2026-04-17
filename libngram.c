@@ -34,6 +34,7 @@ static int kc_ngram_is_separator(char ch, const char *separators) {
     if (separators == NULL || *separators == '\0') {
         return 0;
     }
+
     return strchr(separators, (unsigned char)ch) != NULL;
 }
 
@@ -66,9 +67,9 @@ static void kc_ngram_free_tokens(kc_ngram_token_list_t *tokens) {
  * @return 0 on success, or -1 on failure.
  */
 static int kc_ngram_push_token(
-kc_ngram_token_list_t *tokens,
-const char *start,
-size_t length
+    kc_ngram_token_list_t *tokens,
+    const char *start,
+    size_t length
 ) {
     char *copy;
     char **next_items;
@@ -85,7 +86,10 @@ size_t length
     memcpy(copy, start, length);
     copy[length] = '\0';
 
-    next_items = (char **)realloc(tokens->items, (size_t)(tokens->count + 1) * sizeof(char *));
+    next_items = (char **)realloc(
+        tokens->items,
+        (size_t)(tokens->count + 1) * sizeof(char *)
+    );
     if (next_items == NULL) {
         free(copy);
         return -1;
@@ -105,9 +109,9 @@ size_t length
  * @return 0 on success, or -1 on failure.
  */
 static int kc_ngram_split_tokens(
-const char *input,
-const char *separators,
-kc_ngram_token_list_t *tokens
+    const char *input,
+    const char *separators,
+    kc_ngram_token_list_t *tokens
 ) {
     const char *cursor;
 
@@ -159,10 +163,10 @@ kc_ngram_token_list_t *tokens
  * @return 1 when the span is closed, or 0 otherwise.
  */
 static int kc_ngram_span_is_closed(
-int start,
-int end,
-const kc_ngram_span_t *closed_spans,
-int closed_count
+    int start,
+    int end,
+    const kc_ngram_span_t *closed_spans,
+    int closed_count
 ) {
     int i;
 
@@ -184,10 +188,10 @@ int closed_count
  * @return 0 on success, or -1 on failure.
  */
 static int kc_ngram_join_tokens(
-const kc_ngram_token_list_t *tokens,
-int start,
-int size,
-char **out_text
+    const kc_ngram_token_list_t *tokens,
+    int start,
+    int size,
+    char **out_text
 ) {
     int i;
     size_t length;
@@ -253,10 +257,10 @@ int kc_ngram_options_default(kc_ngram_options_t *options) {
  * @return Number of emitted chunks, or -1 on failure.
  */
 int kc_ngram_execute(
-const char *input,
-const kc_ngram_options_t *options,
-kc_ngram_visit_fn visit,
-void *context
+    const char *input,
+    const kc_ngram_options_t *options,
+    kc_ngram_visit_fn visit,
+    void *context
 ) {
     kc_ngram_options_t local_options;
     kc_ngram_token_list_t tokens;
@@ -291,7 +295,10 @@ void *context
         return 0;
     }
 
-    closed_spans = (kc_ngram_span_t *)calloc((size_t)tokens.count, sizeof(kc_ngram_span_t));
+    closed_spans = (kc_ngram_span_t *)calloc(
+        (size_t)tokens.count,
+        sizeof(kc_ngram_span_t)
+    );
     if (closed_spans == NULL) {
         kc_ngram_free_tokens(&tokens);
         return -1;

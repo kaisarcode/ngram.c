@@ -10,6 +10,7 @@
 
 #include "ngram.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,6 +48,35 @@ static const char *kc_ngram_read_stdin(char *buffer, size_t size) {
 }
 
 /**
+ * Parses one integer CLI value.
+ * @param text Input text.
+ * @param out Output integer pointer.
+ * @return 1 on success, or 0 on failure.
+ */
+static int kc_ngram_parse_int(const char *text, int *out) {
+    char *end;
+    long value;
+
+    if (text == NULL || out == NULL) {
+        return 0;
+    }
+
+    errno = 0;
+    value = strtol(text, &end, 10);
+
+    if (errno != 0 || end == text || *end != '\0') {
+        return 0;
+    }
+
+    if (value < -2147483647L - 1L || value > 2147483647L) {
+        return 0;
+    }
+
+    *out = (int)value;
+    return 1;
+}
+
+/**
  * Prints the compact command help.
  * @return No return value.
  */
@@ -60,6 +90,9 @@ static void kc_ngram_help(void) {
     printf("  --cmd, -cmd <cmd>   Execute command for each chunk\n");
     printf("  --help, -h          Show help\n");
     printf("  --version, -v       Show version\n\n");
+    printf("Notes:\n");
+    printf("  Each chunk is printed before --cmd is evaluated.\n");
+    printf("  A span closes when the command produces stdout.\n\n");
     printf("Examples:\n");
     printf("  ngram \"one two three\"\n");
     printf("  printf 'one two three' | ngram -max 2 -min 1\n");
@@ -106,7 +139,10 @@ static int kc_ngram_set_env_int(const char *name, int value) {
  * @param chunk Current chunk passed through stdin.
  * @return 1 when the command wrote any stdout, 0 otherwise, or -1 on failure.
  */
-static int kc_ngram_run_command(const char *command, const kc_ngram_chunk_t *chunk) {
+static int kc_ngram_run_command(
+    const char *command,
+    const kc_ngram_chunk_t *chunk
+) {
     int in_pipe[2];
     int out_pipe[2];
     pid_t pid;
@@ -119,7 +155,13 @@ static int kc_ngram_run_command(const char *command, const kc_ngram_chunk_t *chu
         return 0;
     }
 
-    if (pipe(in_pipe) != 0 || pipe(out_pipe) != 0) {
+    if (pipe(in_pipe) != 0) {
+        return -1;
+    }
+
+    if (pipe(out_pipe) != 0) {
+        close(in_pipe[0]);
+        close(in_pipe[1]);
         return -1;
     }
 
@@ -139,15 +181,19 @@ static int kc_ngram_run_command(const char *command, const kc_ngram_chunk_t *chu
         close(in_pipe[1]);
         close(out_pipe[0]);
         close(out_pipe[1]);
+
         if (kc_ngram_set_env_int("KC_NGR_START", chunk->start) != 0) {
             _exit(1);
         }
+
         if (kc_ngram_set_env_int("KC_NGR_END", chunk->end) != 0) {
             _exit(1);
         }
+
         if (kc_ngram_set_env_int("KC_NGR_SIZE", chunk->size) != 0) {
             _exit(1);
         }
+
         execl("/bin/sh", "sh", "-lc", command, (char *)NULL);
         _exit(127);
     }
@@ -195,8 +241,13 @@ static int kc_ngram_cli_visit(const kc_ngram_chunk_t *chunk, void *context) {
     }
 
     printf("%s\n", chunk->text);
+
     cli_context = (kc_ngram_cli_context_t *)context;
-    if (cli_context == NULL || cli_context->command == NULL || *cli_context->command == '\0') {
+    if (
+        cli_context == NULL ||
+        cli_context->command == NULL ||
+        *cli_context->command == '\0'
+    ) {
         return 0;
     }
 
@@ -222,53 +273,72 @@ int main(int argc, char **argv) {
 
     context.command = NULL;
     text = NULL;
+
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             kc_ngram_help();
             return 0;
         }
+
         if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
             kc_ngram_version();
             return 0;
         }
-        if ((strcmp(argv[i], "--max") == 0 || strcmp(argv[i], "-max") == 0)
-            && i + 1 < argc) {
-            options.max_tokens = atoi(argv[++i]);
-            continue;
-        }
-        if ((strcmp(argv[i], "--min") == 0 || strcmp(argv[i], "-min") == 0)
-            && i + 1 < argc) {
-            options.min_tokens = atoi(argv[++i]);
-            continue;
-        }
-        if ((strcmp(argv[i], "--sep") == 0 || strcmp(argv[i], "-sep") == 0)
-            && i + 1 < argc) {
-            options.separators = argv[++i];
-            continue;
-        }
-        if ((strcmp(argv[i], "--cmd") == 0 || strcmp(argv[i], "-cmd") == 0)
-            && i + 1 < argc) {
-            context.command = argv[++i];
-            continue;
-        }
+
         if (strcmp(argv[i], "--max") == 0 || strcmp(argv[i], "-max") == 0) {
-            return kc_ngram_fail_usage("Missing value for --max.");
+            if (i + 1 >= argc) {
+                return kc_ngram_fail_usage("Missing value for --max.");
+            }
+
+            if (!kc_ngram_parse_int(argv[i + 1], &options.max_tokens)) {
+                return kc_ngram_fail_usage("Invalid value for --max.");
+            }
+
+            i++;
+            continue;
         }
+
         if (strcmp(argv[i], "--min") == 0 || strcmp(argv[i], "-min") == 0) {
-            return kc_ngram_fail_usage("Missing value for --min.");
+            if (i + 1 >= argc) {
+                return kc_ngram_fail_usage("Missing value for --min.");
+            }
+
+            if (!kc_ngram_parse_int(argv[i + 1], &options.min_tokens)) {
+                return kc_ngram_fail_usage("Invalid value for --min.");
+            }
+
+            i++;
+            continue;
         }
+
         if (strcmp(argv[i], "--sep") == 0 || strcmp(argv[i], "-sep") == 0) {
-            return kc_ngram_fail_usage("Missing value for --sep.");
+            if (i + 1 >= argc) {
+                return kc_ngram_fail_usage("Missing value for --sep.");
+            }
+
+            options.separators = argv[i + 1];
+            i++;
+            continue;
         }
+
         if (strcmp(argv[i], "--cmd") == 0 || strcmp(argv[i], "-cmd") == 0) {
-            return kc_ngram_fail_usage("Missing value for --cmd.");
+            if (i + 1 >= argc) {
+                return kc_ngram_fail_usage("Missing value for --cmd.");
+            }
+
+            context.command = argv[i + 1];
+            i++;
+            continue;
         }
+
         if (argv[i][0] == '-') {
             return kc_ngram_fail_usage("Unknown argument.");
         }
+
         if (text != NULL) {
             return kc_ngram_fail_usage("Too many positional arguments.");
         }
+
         text = argv[i];
     }
 

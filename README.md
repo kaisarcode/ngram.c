@@ -47,6 +47,11 @@ Options:
 - `--help`, `-h`
 - `--version`, `-v`
 
+When `--cmd` is provided, each chunk is still printed normally.
+The command is then executed for that chunk with the chunk text on stdin.
+
+If the command produces stdout, the current span is closed and nested windows inside it are skipped.
+
 Examples:
 
 ```bash

@@ -65,10 +65,10 @@ int kc_ngram_options_default(kc_ngram_options_t *options);
  * @return Number of emitted chunks, or -1 on failure.
  */
 int kc_ngram_execute(
-const char *input,
-const kc_ngram_options_t *options,
-kc_ngram_visit_fn visit,
-void *context
+    const char *input,
+    const kc_ngram_options_t *options,
+    kc_ngram_visit_fn visit,
+    void *context
 );
 
 #ifdef __cplusplus
