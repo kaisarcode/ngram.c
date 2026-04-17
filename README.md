@@ -11,8 +11,6 @@ For an input token stream, `ngram`:
 3. walks each window left to right
 4. allows a callback to close a span so nested windows inside it are skipped
 
-This mirrors the primitive behavior of `kc-ngr`, but as a reusable C library.
-
 ## Public API
 
 The library is exposed through [ngram.h](./ngram.h).
