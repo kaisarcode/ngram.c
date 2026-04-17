@@ -1,0 +1,6 @@
+ngram
+*.exe
+*.so
+*.dll
+*.a
+*.o
