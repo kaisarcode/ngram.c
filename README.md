@@ -62,8 +62,16 @@ printf 'one two three' | ngram -cmd 'grep -qx "one two" && echo cut'
 
 ## Build
 
+POSIX:
+
 ```bash
-gcc -O3 libngram.c ngram.c -o ngram
+cc -O2 libngram.c ngram.c -o ngram
+```
+
+Windows:
+
+```bash
+cl /O2 /TC libngram.c ngram.c -o ngram
 ```
 
 ## Library Example
