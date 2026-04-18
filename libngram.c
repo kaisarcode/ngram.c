@@ -64,7 +64,7 @@ static void kc_ngram_free_tokens(kc_ngram_token_list_t *tokens) {
  * @param tokens Destination token list.
  * @param start Start pointer of the token slice.
  * @param length Token length in bytes.
- * @return 0 on success, or -1 on failure.
+ * @return 0 on success or -1 on failure.
  */
 static int kc_ngram_push_token(
     kc_ngram_token_list_t *tokens,

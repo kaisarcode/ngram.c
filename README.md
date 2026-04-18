@@ -99,6 +99,8 @@ int main(void) {
 }
 ```
 
+---
+
 **Author:** KaisarCode
 
 **Email:** <kaisar@kaisarcode.com>

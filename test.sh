@@ -139,7 +139,7 @@ EOF
 one two three
 EOF
 )"
-    kc_test_run_case "span closing command" "$expected" ./ngram -cmd 'cat >/dev/null; echo cut' "one two three" || failed=$((failed + 1))
+    kc_test_run_case "span closing command" "$expected" ./ngram -cmd 'sh -c '\''cat >/dev/null; echo cut'\''' "one two three" || failed=$((failed + 1))
 
     expected="$(cat <<'EOF'
 one two three
