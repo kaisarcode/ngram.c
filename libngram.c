@@ -15,14 +15,25 @@
 #include <string.h>
 
 typedef struct {
-    char **items;
+    char *text;
+    size_t length;
+} kc_ngram_token_t;
+
+typedef struct {
+    kc_ngram_token_t *items;
     int count;
+    int cap;
 } kc_ngram_token_list_t;
 
 typedef struct {
     int start;
     int end;
 } kc_ngram_span_t;
+
+typedef struct {
+    char *data;
+    size_t cap;
+} kc_ngram_text_buffer_t;
 
 /**
  * Returns whether one byte belongs to the configured separator set.
@@ -46,17 +57,50 @@ static int kc_ngram_is_separator(char ch, const char *separators) {
 static void kc_ngram_free_tokens(kc_ngram_token_list_t *tokens) {
     int i;
 
-    if (tokens == NULL || tokens->items == NULL) {
+    if (tokens == NULL) {
         return;
     }
 
     for (i = 0; i < tokens->count; i++) {
-        free(tokens->items[i]);
+        free(tokens->items[i].text);
     }
 
     free(tokens->items);
     tokens->items = NULL;
     tokens->count = 0;
+    tokens->cap = 0;
+}
+
+/**
+ * Ensures token storage capacity for at least one more element.
+ * @param tokens Destination token list.
+ * @return 0 on success, or -1 on failure.
+ */
+static int kc_ngram_reserve_token_slot(kc_ngram_token_list_t *tokens) {
+    kc_ngram_token_t *next_items;
+    int next_cap;
+
+    if (tokens == NULL) {
+        return -1;
+    }
+
+    if (tokens->count < tokens->cap) {
+        return 0;
+    }
+
+    next_cap = tokens->cap > 0 ? tokens->cap * 2 : 16;
+
+    next_items = (kc_ngram_token_t *)realloc(
+        tokens->items,
+        (size_t)next_cap * sizeof(kc_ngram_token_t)
+    );
+    if (next_items == NULL) {
+        return -1;
+    }
+
+    tokens->items = next_items;
+    tokens->cap = next_cap;
+    return 0;
 }
 
 /**
@@ -64,7 +108,7 @@ static void kc_ngram_free_tokens(kc_ngram_token_list_t *tokens) {
  * @param tokens Destination token list.
  * @param start Start pointer of the token slice.
  * @param length Token length in bytes.
- * @return 0 on success or -1 on failure.
+ * @return 0 on success, or -1 on failure.
  */
 static int kc_ngram_push_token(
     kc_ngram_token_list_t *tokens,
@@ -72,9 +116,12 @@ static int kc_ngram_push_token(
     size_t length
 ) {
     char *copy;
-    char **next_items;
 
     if (tokens == NULL || start == NULL || length == 0U) {
+        return -1;
+    }
+
+    if (kc_ngram_reserve_token_slot(tokens) != 0) {
         return -1;
     }
 
@@ -86,17 +133,8 @@ static int kc_ngram_push_token(
     memcpy(copy, start, length);
     copy[length] = '\0';
 
-    next_items = (char **)realloc(
-        tokens->items,
-        (size_t)(tokens->count + 1) * sizeof(char *)
-    );
-    if (next_items == NULL) {
-        free(copy);
-        return -1;
-    }
-
-    tokens->items = next_items;
-    tokens->items[tokens->count] = copy;
+    tokens->items[tokens->count].text = copy;
+    tokens->items[tokens->count].length = length;
     tokens->count++;
     return 0;
 }
@@ -121,6 +159,7 @@ static int kc_ngram_split_tokens(
 
     tokens->items = NULL;
     tokens->count = 0;
+    tokens->cap = 0;
     cursor = input;
 
     while (*cursor != '\0') {
@@ -180,38 +219,80 @@ static int kc_ngram_span_is_closed(
 }
 
 /**
- * Joins one token window into a single space-delimited string.
+ * Ensures the shared joined-text buffer can hold the given size.
+ * @param buffer Shared text buffer.
+ * @param size Required size including trailing NUL.
+ * @return 0 on success, or -1 on failure.
+ */
+static int kc_ngram_text_buffer_reserve(
+    kc_ngram_text_buffer_t *buffer,
+    size_t size
+) {
+    char *next_data;
+    size_t next_cap;
+
+    if (buffer == NULL) {
+        return -1;
+    }
+
+    if (size <= buffer->cap) {
+        return 0;
+    }
+
+    next_cap = buffer->cap > 0U ? buffer->cap : 64U;
+    while (next_cap < size) {
+        next_cap *= 2U;
+    }
+
+    next_data = (char *)realloc(buffer->data, next_cap);
+    if (next_data == NULL) {
+        return -1;
+    }
+
+    buffer->data = next_data;
+    buffer->cap = next_cap;
+    return 0;
+}
+
+/**
+ * Joins one token window into a reusable space-delimited buffer.
  * @param tokens Source token list.
  * @param start Inclusive token start index.
  * @param size Number of tokens in the window.
- * @param out_text Destination for the allocated chunk string.
+ * @param buffer Shared reusable text buffer.
+ * @param out_text Destination for the joined chunk pointer.
  * @return 0 on success, or -1 on failure.
  */
 static int kc_ngram_join_tokens(
     const kc_ngram_token_list_t *tokens,
     int start,
     int size,
-    char **out_text
+    kc_ngram_text_buffer_t *buffer,
+    const char **out_text
 ) {
     int i;
     size_t length;
-    char *text;
     size_t offset;
 
-    if (tokens == NULL || out_text == NULL || start < 0 || size < 1) {
+    if (
+        tokens == NULL ||
+        buffer == NULL ||
+        out_text == NULL ||
+        start < 0 ||
+        size < 1
+    ) {
         return -1;
     }
 
     length = 1U;
     for (i = 0; i < size; i++) {
-        length += strlen(tokens->items[start + i]);
+        length += tokens->items[start + i].length;
         if (i + 1 < size) {
             length++;
         }
     }
 
-    text = (char *)malloc(length);
-    if (text == NULL) {
+    if (kc_ngram_text_buffer_reserve(buffer, length) != 0) {
         return -1;
     }
 
@@ -219,16 +300,59 @@ static int kc_ngram_join_tokens(
     for (i = 0; i < size; i++) {
         size_t token_length;
 
-        token_length = strlen(tokens->items[start + i]);
-        memcpy(text + offset, tokens->items[start + i], token_length);
+        token_length = tokens->items[start + i].length;
+        memcpy(
+            buffer->data + offset,
+            tokens->items[start + i].text,
+            token_length
+        );
         offset += token_length;
+
         if (i + 1 < size) {
-            text[offset++] = ' ';
+            buffer->data[offset++] = ' ';
         }
     }
 
-    text[offset] = '\0';
-    *out_text = text;
+    buffer->data[offset] = '\0';
+    *out_text = buffer->data;
+    return 0;
+}
+
+/**
+ * Ensures span storage capacity for at least one more element.
+ * @param spans Span array pointer.
+ * @param count Current number of spans.
+ * @param cap Current allocated capacity.
+ * @return 0 on success, or -1 on failure.
+ */
+static int kc_ngram_reserve_span_slot(
+    kc_ngram_span_t **spans,
+    int count,
+    int *cap
+) {
+    kc_ngram_span_t *next_spans;
+    int next_cap;
+
+    if (spans == NULL || cap == NULL) {
+        return -1;
+    }
+
+    if (count < *cap) {
+        return 0;
+    }
+
+    next_cap = *cap > 0 ? (*cap * 2) : 16;
+
+    next_spans = (kc_ngram_span_t *)realloc(
+        *spans,
+        (size_t)next_cap * sizeof(kc_ngram_span_t)
+    );
+    if (next_spans == NULL) {
+        return -1;
+    }
+
+    *spans = next_spans;
+    *cap = next_cap;
     return 0;
 }
 
@@ -265,7 +389,9 @@ int kc_ngram_execute(
     kc_ngram_options_t local_options;
     kc_ngram_token_list_t tokens;
     kc_ngram_span_t *closed_spans;
+    kc_ngram_text_buffer_t text_buffer;
     int closed_count;
+    int closed_cap;
     int loop_max;
     int window_size;
     int start;
@@ -279,6 +405,7 @@ int kc_ngram_execute(
         if (kc_ngram_options_default(&local_options) != 0) {
             return -1;
         }
+
         options = &local_options;
     }
 
@@ -295,26 +422,23 @@ int kc_ngram_execute(
         return 0;
     }
 
-    closed_spans = (kc_ngram_span_t *)calloc(
-        (size_t)tokens.count,
-        sizeof(kc_ngram_span_t)
-    );
-    if (closed_spans == NULL) {
-        kc_ngram_free_tokens(&tokens);
-        return -1;
-    }
-
+    closed_spans = NULL;
     closed_count = 0;
+    closed_cap = 0;
+    text_buffer.data = NULL;
+    text_buffer.cap = 0U;
+
     loop_max = options->max_tokens;
     if (tokens.count < loop_max) {
         loop_max = tokens.count;
     }
 
     emitted = 0;
+
     for (window_size = loop_max; window_size >= options->min_tokens; window_size--) {
         for (start = 0; start <= tokens.count - window_size; start++) {
             kc_ngram_chunk_t chunk;
-            char *text;
+            const char *text;
             int end;
             int decision;
 
@@ -323,7 +447,16 @@ int kc_ngram_execute(
                 continue;
             }
 
-            if (kc_ngram_join_tokens(&tokens, start, window_size, &text) != 0) {
+            if (
+                kc_ngram_join_tokens(
+                    &tokens,
+                    start,
+                    window_size,
+                    &text_buffer,
+                    &text
+                ) != 0
+            ) {
+                free(text_buffer.data);
                 free(closed_spans);
                 kc_ngram_free_tokens(&tokens);
                 return -1;
@@ -335,15 +468,29 @@ int kc_ngram_execute(
             chunk.size = window_size;
 
             decision = visit(&chunk, context);
-            free(text);
             if (decision < 0) {
+                free(text_buffer.data);
                 free(closed_spans);
                 kc_ngram_free_tokens(&tokens);
                 return -1;
             }
 
             emitted++;
+
             if (decision == 1) {
+                if (
+                    kc_ngram_reserve_span_slot(
+                        &closed_spans,
+                        closed_count,
+                        &closed_cap
+                    ) != 0
+                ) {
+                    free(text_buffer.data);
+                    free(closed_spans);
+                    kc_ngram_free_tokens(&tokens);
+                    return -1;
+                }
+
                 closed_spans[closed_count].start = start;
                 closed_spans[closed_count].end = end;
                 closed_count++;
@@ -351,6 +498,7 @@ int kc_ngram_execute(
         }
     }
 
+    free(text_buffer.data);
     free(closed_spans);
     kc_ngram_free_tokens(&tokens);
     return emitted;
