@@ -49,6 +49,8 @@ Options:
 
 When `--cmd` is provided, each chunk is still printed normally.
 The command is then executed for that chunk with the chunk text on stdin.
+`ngram` parses the command into arguments itself, so shell operators such
+as `&&` need an explicit shell wrapper.
 
 If the command produces stdout, the current span is closed and nested windows inside it are skipped.
 
@@ -57,7 +59,8 @@ Examples:
 ```bash
 ngram "one two three"
 printf 'one two three' | ngram -max 2 -min 1
-printf 'one two three' | ngram -cmd 'grep -qx "one two" && echo cut'
+printf 'one two three' | ngram -cmd 'sh -c '\''grep -qx "one two" && echo cut'\'''
+ngram -cmd 'cmd /C "findstr /X /C:\"one two\" && echo cut"' "one two three"
 ```
 
 ## Build
@@ -66,6 +69,7 @@ POSIX:
 
 ```bash
 cc -O2 libngram.c ngram.c -o ngram
+./test.sh
 ```
 
 Windows:

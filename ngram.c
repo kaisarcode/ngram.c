@@ -6,6 +6,8 @@
  * License: https://www.gnu.org/licenses/gpl-3.0.html
  */
 
+#define _POSIX_C_SOURCE 200809L
+
 #include "ngram.h"
 
 #include <errno.h>
@@ -16,7 +18,6 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
-#define _POSIX_C_SOURCE 200809L
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -318,6 +319,161 @@ static int kc_ngram_parse_command(
 }
 
 /**
+ * Builds one Windows command line string from parsed arguments.
+ * @param args Parsed argument list.
+ * @param out_command_line Destination command line buffer.
+ * @return 0 on success, or -1 on failure.
+ */
+static int kc_ngram_build_windows_command_line(
+    const kc_ngram_arg_list_t *args,
+    char **out_command_line
+) {
+    char *command_line;
+    size_t length;
+    size_t capacity;
+    int i;
+
+    if (args == NULL || out_command_line == NULL || args->count < 1) {
+        return -1;
+    }
+
+    command_line = NULL;
+    length = 0U;
+    capacity = 0U;
+
+    for (i = 0; i < args->count; i++) {
+        const char *arg;
+        size_t j;
+        int needs_quotes;
+
+        arg = args->items[i];
+        if (arg == NULL) {
+            free(command_line);
+            return -1;
+        }
+
+        if (i > 0) {
+            if (kc_ngram_push_char(&command_line, &length, &capacity, ' ') != 0) {
+                free(command_line);
+                return -1;
+            }
+        }
+
+        needs_quotes = (*arg == '\0');
+        for (j = 0U; arg[j] != '\0'; j++) {
+            if (arg[j] == ' ' || arg[j] == '\t' || arg[j] == '"') {
+                needs_quotes = 1;
+                break;
+            }
+        }
+
+        if (!needs_quotes) {
+            for (j = 0U; arg[j] != '\0'; j++) {
+                if (kc_ngram_push_char(&command_line, &length, &capacity, arg[j]) != 0) {
+                    free(command_line);
+                    return -1;
+                }
+            }
+
+            continue;
+        }
+
+        if (kc_ngram_push_char(&command_line, &length, &capacity, '"') != 0) {
+            free(command_line);
+            return -1;
+        }
+
+        for (j = 0U; ; ) {
+            size_t slash_count;
+            char ch;
+
+            slash_count = 0U;
+            while (arg[j] == '\\') {
+                slash_count++;
+                j++;
+            }
+
+            ch = arg[j];
+            if (ch == '\0') {
+                while (slash_count > 0U) {
+                    if (kc_ngram_push_char(&command_line, &length, &capacity, '\\') != 0) {
+                        free(command_line);
+                        return -1;
+                    }
+
+                    if (kc_ngram_push_char(&command_line, &length, &capacity, '\\') != 0) {
+                        free(command_line);
+                        return -1;
+                    }
+
+                    slash_count--;
+                }
+
+                break;
+            }
+
+            if (ch == '"') {
+                while (slash_count > 0U) {
+                    if (kc_ngram_push_char(&command_line, &length, &capacity, '\\') != 0) {
+                        free(command_line);
+                        return -1;
+                    }
+
+                    if (kc_ngram_push_char(&command_line, &length, &capacity, '\\') != 0) {
+                        free(command_line);
+                        return -1;
+                    }
+
+                    slash_count--;
+                }
+
+                if (kc_ngram_push_char(&command_line, &length, &capacity, '\\') != 0) {
+                    free(command_line);
+                    return -1;
+                }
+
+                if (kc_ngram_push_char(&command_line, &length, &capacity, '"') != 0) {
+                    free(command_line);
+                    return -1;
+                }
+
+                j++;
+                continue;
+            }
+
+            while (slash_count > 0U) {
+                if (kc_ngram_push_char(&command_line, &length, &capacity, '\\') != 0) {
+                    free(command_line);
+                    return -1;
+                }
+
+                slash_count--;
+            }
+
+            if (kc_ngram_push_char(&command_line, &length, &capacity, ch) != 0) {
+                free(command_line);
+                return -1;
+            }
+
+            j++;
+        }
+
+        if (kc_ngram_push_char(&command_line, &length, &capacity, '"') != 0) {
+            free(command_line);
+            return -1;
+        }
+    }
+
+    if (kc_ngram_push_char(&command_line, &length, &capacity, '\0') != 0) {
+        free(command_line);
+        return -1;
+    }
+
+    *out_command_line = command_line;
+    return 0;
+}
+
+/**
  * Reads text from standard input into the provided buffer.
  * @param buffer Destination buffer.
  * @param size Buffer size in bytes.
@@ -602,37 +758,79 @@ static int kc_ngram_run_command(
     SECURITY_ATTRIBUTES sa;
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
-    HANDLE read_pipe;
-    HANDLE write_pipe;
-    DWORD exit_code;
+    HANDLE stdin_read;
+    HANDLE stdin_write;
+    HANDLE stdout_read;
+    HANDLE stdout_write;
+    kc_ngram_arg_list_t args;
+    char *command_line;
+    char output_buffer[256];
+    DWORD bytes_read;
+    DWORD error_code;
+    int has_stdout;
 
     if (command == NULL || chunk == NULL) {
         return 0;
+    }
+
+    if (kc_ngram_parse_command(command, &args) != 0) {
+        return -1;
+    }
+
+    if (kc_ngram_build_windows_command_line(&args, &command_line) != 0) {
+        kc_ngram_free_args(&args);
+        return -1;
     }
 
     ZeroMemory(&sa, sizeof(sa));
     sa.nLength = sizeof(sa);
     sa.bInheritHandle = TRUE;
 
-    if (!CreatePipe(&read_pipe, &write_pipe, &sa, 0)) {
+    if (!CreatePipe(&stdin_read, &stdin_write, &sa, 0)) {
+        free(command_line);
+        kc_ngram_free_args(&args);
         return -1;
     }
 
-    SetHandleInformation(write_pipe, HANDLE_FLAG_INHERIT, 0);
+    if (!SetHandleInformation(stdin_write, HANDLE_FLAG_INHERIT, 0)) {
+        CloseHandle(stdin_read);
+        CloseHandle(stdin_write);
+        free(command_line);
+        kc_ngram_free_args(&args);
+        return -1;
+    }
+
+    if (!CreatePipe(&stdout_read, &stdout_write, &sa, 0)) {
+        CloseHandle(stdin_read);
+        CloseHandle(stdin_write);
+        free(command_line);
+        kc_ngram_free_args(&args);
+        return -1;
+    }
+
+    if (!SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0)) {
+        CloseHandle(stdin_read);
+        CloseHandle(stdin_write);
+        CloseHandle(stdout_read);
+        CloseHandle(stdout_write);
+        free(command_line);
+        kc_ngram_free_args(&args);
+        return -1;
+    }
 
     ZeroMemory(&si, sizeof(si));
     ZeroMemory(&pi, sizeof(pi));
 
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdInput = read_pipe;
-    si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    si.hStdInput = stdin_read;
+    si.hStdOutput = stdout_write;
     si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
 
     if (
         !CreateProcessA(
             NULL,
-            (LPSTR)command,
+            command_line,
             NULL,
             NULL,
             TRUE,
@@ -643,43 +841,79 @@ static int kc_ngram_run_command(
             &pi
         )
     ) {
-        CloseHandle(read_pipe);
-        CloseHandle(write_pipe);
+        CloseHandle(stdin_read);
+        CloseHandle(stdin_write);
+        CloseHandle(stdout_read);
+        CloseHandle(stdout_write);
+        free(command_line);
+        kc_ngram_free_args(&args);
         return -1;
     }
 
-    CloseHandle(read_pipe);
+    CloseHandle(stdin_read);
+    CloseHandle(stdout_write);
 
-    if (kc_ngram_write_all(write_pipe, chunk->text, strlen(chunk->text)) != 0) {
-        CloseHandle(write_pipe);
+    if (kc_ngram_write_all(stdin_write, chunk->text, strlen(chunk->text)) != 0) {
+        CloseHandle(stdin_write);
+        CloseHandle(stdout_read);
         WaitForSingleObject(pi.hProcess, INFINITE);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
+        free(command_line);
+        kc_ngram_free_args(&args);
         return -1;
     }
 
-    if (kc_ngram_write_all(write_pipe, "\n", 1U) != 0) {
-        CloseHandle(write_pipe);
+    if (kc_ngram_write_all(stdin_write, "\n", 1U) != 0) {
+        CloseHandle(stdin_write);
+        CloseHandle(stdout_read);
         WaitForSingleObject(pi.hProcess, INFINITE);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
+        free(command_line);
+        kc_ngram_free_args(&args);
         return -1;
     }
 
-    CloseHandle(write_pipe);
+    CloseHandle(stdin_write);
+
+    has_stdout = 0;
+    for (;;) {
+        if (!ReadFile(stdout_read, output_buffer, sizeof(output_buffer), &bytes_read, NULL)) {
+            error_code = GetLastError();
+            if (error_code == ERROR_BROKEN_PIPE) {
+                break;
+            }
+
+            CloseHandle(stdout_read);
+            WaitForSingleObject(pi.hProcess, INFINITE);
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+            free(command_line);
+            kc_ngram_free_args(&args);
+            return -1;
+        }
+
+        if (bytes_read == 0U) {
+            break;
+        }
+
+        has_stdout = 1;
+    }
+
+    CloseHandle(stdout_read);
 
     WaitForSingleObject(pi.hProcess, INFINITE);
-
-    if (!GetExitCodeProcess(pi.hProcess, &exit_code)) {
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-        return -1;
-    }
-
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
+    free(command_line);
+    kc_ngram_free_args(&args);
 
-    return exit_code == 0U ? 1 : 0;
+    if (has_stdout) {
+        return 1;
+    }
+
+    return 0;
 }
 
 #endif
