@@ -74,6 +74,9 @@ Windows:
 cl /O2 /TC libngram.c ngram.c -o ngram
 ```
 
+The source code is written to stay portable across Windows, macOS, iOS,
+Linux, and Android. Final compiler flags and output names depend on the toolchain.
+
 ## Library Example
 
 ```c
@@ -95,8 +98,6 @@ int main(void) {
     return kc_ngram_execute("one two three", &options, handle_chunk, NULL) < 0;
 }
 ```
-
----
 
 **Author:** KaisarCode
 
