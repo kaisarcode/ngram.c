@@ -173,6 +173,25 @@ EOF
 
     expected="$(cat <<'EOF'
 one two three
+two three four
+EOF
+)"
+    kc_test_run_case "overlapping closed spans keep the same output" "$expected" ./ngram -max 3 -min 1 -cmd "sh -c 'grep -q \" \" && echo cut'" "one two three four" || failed=$((failed + 1))
+
+    expected="$(cat <<'EOF'
+t0 t1
+t1 t2
+t2 t3
+t3 t4
+t4 t5
+t5 t6
+t6 t7
+EOF
+)"
+    kc_test_run_case "stress many span closures" "$expected" ./ngram -max 2 -min 1 -cmd "sh -c 'grep -q \" \" && echo cut'" "t0 t1 t2 t3 t4 t5 t6 t7" || failed=$((failed + 1))
+
+    expected="$(cat <<'EOF'
+one two three
 EOF
 )"
     kc_test_run_pipe_case "stdin input" "one two three" "$expected" ./ngram -max 3 -min 3 || failed=$((failed + 1))

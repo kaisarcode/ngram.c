@@ -186,21 +186,57 @@ static int kc_ngram_split_tokens(
  * @param closed_count Number of closed spans.
  * @return 1 when the span is closed, or 0 otherwise.
  */
+static int kc_ngram_find_span_insert_index(
+    const kc_ngram_span_t *spans,
+    int count,
+    int start
+) {
+    int left;
+    int right;
+
+    left = 0;
+    right = count;
+
+    while (left < right) {
+        int mid;
+
+        mid = left + (right - left) / 2;
+        if (spans[mid].start < start) {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+
+    return left;
+}
+
+/**
+ * Returns whether one span is fully contained inside a closed span.
+ * @param start Inclusive candidate start index.
+ * @param end Inclusive candidate end index.
+ * @param closed_spans Closed span array sorted by start index.
+ * @param closed_count Number of closed spans.
+ * @return 1 when the span is closed, or 0 otherwise.
+ */
 static int kc_ngram_span_is_closed(
     int start,
     int end,
     const kc_ngram_span_t *closed_spans,
     int closed_count
 ) {
-    int i;
+    int index;
 
-    for (i = 0; i < closed_count; i++) {
-        if (start >= closed_spans[i].start && end <= closed_spans[i].end) {
-            return 1;
-        }
+    if (closed_spans == NULL || closed_count < 1) {
+        return 0;
     }
 
-    return 0;
+    index = kc_ngram_find_span_insert_index(closed_spans, closed_count, start);
+    if (index > 0) {
+        index--;
+    }
+
+    return start >= closed_spans[index].start && end <= closed_spans[index].end;
 }
 
 /**
@@ -238,6 +274,89 @@ static int kc_ngram_reserve_span_slot(
 
     *spans = next_spans;
     *cap = next_cap;
+    return 0;
+}
+
+/**
+ * Inserts one closed span while pruning redundant contained spans.
+ * @param spans Sorted span array pointer.
+ * @param count Current number of spans.
+ * @param cap Current allocated capacity.
+ * @param start Inclusive token start index.
+ * @param end Inclusive token end index.
+ * @return 0 on success, or -1 on allocation failure.
+ */
+static int kc_ngram_add_closed_span(
+    kc_ngram_span_t **spans,
+    int *count,
+    int *cap,
+    int start,
+    int end
+) {
+    int insert_at;
+    int remove_end;
+    int tail_count;
+
+    if (spans == NULL || count == NULL || cap == NULL) {
+        return -1;
+    }
+
+    insert_at = kc_ngram_find_span_insert_index(*spans, *count, start);
+
+    if (
+        insert_at > 0 &&
+        start >= (*spans)[insert_at - 1].start &&
+        end <= (*spans)[insert_at - 1].end
+    ) {
+        return 0;
+    }
+
+    if (
+        insert_at < *count &&
+        (*spans)[insert_at].start == start &&
+        (*spans)[insert_at].end >= end
+    ) {
+        return 0;
+    }
+
+    remove_end = insert_at;
+    while (remove_end < *count && (*spans)[remove_end].end <= end) {
+        remove_end++;
+    }
+
+    if (remove_end > insert_at) {
+        memmove(
+            *spans + insert_at,
+            *spans + remove_end,
+            (size_t)(*count - remove_end) * sizeof(kc_ngram_span_t)
+        );
+        *count -= remove_end - insert_at;
+    }
+
+    if (
+        insert_at < *count &&
+        start >= (*spans)[insert_at].start &&
+        end <= (*spans)[insert_at].end
+    ) {
+        return 0;
+    }
+
+    if (kc_ngram_reserve_span_slot(spans, *count, cap) != 0) {
+        return -1;
+    }
+
+    tail_count = *count - insert_at;
+    if (tail_count > 0) {
+        memmove(
+            *spans + insert_at + 1,
+            *spans + insert_at,
+            (size_t)tail_count * sizeof(kc_ngram_span_t)
+        );
+    }
+
+    (*spans)[insert_at].start = start;
+    (*spans)[insert_at].end = end;
+    (*count)++;
     return 0;
 }
 
@@ -346,20 +465,18 @@ int kc_ngram_execute(
 
             if (decision == 1) {
                 if (
-                    kc_ngram_reserve_span_slot(
+                    kc_ngram_add_closed_span(
                         &closed_spans,
-                        closed_count,
-                        &closed_cap
+                        &closed_count,
+                        &closed_cap,
+                        start,
+                        end
                     ) != 0
                 ) {
                     free(closed_spans);
                     kc_ngram_free_tokens(&tokens);
                     return -1;
                 }
-
-                closed_spans[closed_count].start = start;
-                closed_spans[closed_count].end = end;
-                closed_count++;
             }
         }
     }
