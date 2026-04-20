@@ -225,15 +225,31 @@ static int kc_ngram_span_is_closed(
     const kc_ngram_span_t *closed_spans,
     int closed_count
 ) {
+    int left;
+    int right;
     int index;
 
     if (closed_spans == NULL || closed_count < 1) {
         return 0;
     }
 
-    index = kc_ngram_find_span_insert_index(closed_spans, closed_count, start);
-    if (index > 0) {
-        index--;
+    left = 0;
+    right = closed_count;
+
+    while (left < right) {
+        int mid;
+
+        mid = left + (right - left) / 2;
+        if (closed_spans[mid].start <= start) {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+
+    index = left - 1;
+    if (index < 0) {
+        return 0;
     }
 
     return start >= closed_spans[index].start && end <= closed_spans[index].end;

@@ -172,6 +172,35 @@ EOF
     kc_test_run_case "closed span pruning keeps partial overlaps" "$expected" ./ngram -max 2 -min 1 -cmd "sh -c 'grep -qx \"one two\" && echo cut'" "one two three" || failed=$((failed + 1))
 
     expected="$(cat <<'EOF'
+a b c
+b c d
+c d e
+c d
+d e
+EOF
+)"
+    kc_test_run_case "earlier wide close still suppresses later contained windows" "$expected" ./ngram -max 3 -min 1 -cmd "sh -c 'grep -qx \"a b c\\|d e\" && echo cut'" "a b c d e" || failed=$((failed + 1))
+
+    expected="$(cat <<'EOF'
+a b c d
+b c d e
+EOF
+)"
+    kc_test_run_case "closing all multi token spans keeps maximal windows only" "$expected" ./ngram -max 4 -min 1 -cmd "sh -c 'grep -q \" \" && echo cut'" "a b c d e" || failed=$((failed + 1))
+
+    expected="$(cat <<'EOF'
+a b
+b c
+c d
+d e
+e f
+c
+d
+EOF
+)"
+    kc_test_run_case "multiple disjoint closed spans preserve gaps and overlaps" "$expected" ./ngram -max 2 -min 1 -cmd "sh -c 'grep -qx \"a b\\|e f\" && echo cut'" "a b c d e f" || failed=$((failed + 1))
+
+    expected="$(cat <<'EOF'
 one two three
 two three four
 EOF
@@ -189,6 +218,16 @@ t6 t7
 EOF
 )"
     kc_test_run_case "stress many span closures" "$expected" ./ngram -max 2 -min 1 -cmd "sh -c 'grep -q \" \" && echo cut'" "t0 t1 t2 t3 t4 t5 t6 t7" || failed=$((failed + 1))
+
+    expected="$(cat <<'EOF'
+t0 t1 t2
+t1 t2 t3
+t2 t3 t4
+t3 t4 t5
+t4 t5 t6
+EOF
+)"
+    kc_test_run_case "stress overlapping trigram closures" "$expected" ./ngram -max 3 -min 1 -cmd "sh -c 'grep -Eq \"^[^ ]+ [^ ]+ [^ ]+$\" && echo cut'" "t0 t1 t2 t3 t4 t5 t6" || failed=$((failed + 1))
 
     expected="$(cat <<'EOF'
 one two three
