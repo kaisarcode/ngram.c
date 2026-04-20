@@ -9,7 +9,12 @@ For an input token stream, `ngram`:
 1. splits text into tokens using a separator byte set
 2. emits windows from `max_tokens` down to `min_tokens`
 3. walks each window left to right
-4. allows a callback to close a span so nested windows inside it are skipped
+4. allows a callback to close a span so future windows fully contained inside it are skipped
+
+Separator configuration affects tokenization only. Emitted chunks always point to
+the exact original byte range from the source input, including commas, tabs,
+repeated spaces, or any other separators that appeared between the first and
+last token in the span.
 
 ## Public API
 
@@ -20,6 +25,15 @@ Core types:
 - `kc_ngram_options_t`
 - `kc_ngram_chunk_t`
 - `kc_ngram_visit_fn`
+
+`kc_ngram_chunk_t` exposes the original source span:
+
+- `input`: original input buffer
+- `byte_start`: inclusive byte offset in `input`
+- `byte_end`: exclusive byte offset in `input`
+- `start`: inclusive token start index
+- `end`: inclusive token end index
+- `size`: token count in the span
 
 Core functions:
 
@@ -52,7 +66,9 @@ The command is then executed for that chunk with the exact emitted source span o
 `ngram` parses the command into arguments itself, so shell operators such
 as `&&` need an explicit shell wrapper.
 
-If the command produces stdout, the current span is closed and nested windows inside it are skipped.
+If the command produces stdout, the current span is closed and only future
+windows fully contained inside it are skipped. Partially overlapping windows are
+still emitted.
 
 Examples:
 
@@ -84,6 +100,7 @@ Linux, and Android. Final compiler flags and output names depend on the toolchai
 ## Library Example
 
 ```c
+#include <stdio.h>
 #include "ngram.h"
 
 static int handle_chunk(const kc_ngram_chunk_t *chunk, void *context) {
