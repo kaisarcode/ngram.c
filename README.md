@@ -48,7 +48,7 @@ Options:
 - `--version`, `-v`
 
 When `--cmd` is provided, each chunk is still printed normally.
-The command is then executed for that chunk with the chunk text on stdin.
+The command is then executed for that chunk with the exact emitted source span on stdin.
 `ngram` parses the command into arguments itself, so shell operators such
 as `&&` need an explicit shell wrapper.
 
@@ -88,7 +88,13 @@ Linux, and Android. Final compiler flags and output names depend on the toolchai
 
 static int handle_chunk(const kc_ngram_chunk_t *chunk, void *context) {
     (void)context;
-    printf("%d:%d %s\n", chunk->start, chunk->end, chunk->text);
+    printf(
+        "%d:%d %.*s\n",
+        chunk->start,
+        chunk->end,
+        (int)(chunk->byte_end - chunk->byte_start),
+        chunk->input + chunk->byte_start
+    );
     return 0;
 }
 

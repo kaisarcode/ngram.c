@@ -125,9 +125,9 @@ EOF
     kc_test_run_case "bounded min window" "$expected" ./ngram -max 2 -min 2 "one two three" || failed=$((failed + 1))
 
     expected="$(cat <<'EOF'
-red blue green
-red blue
-blue green
+red,blue;green
+red,blue
+blue;green
 red
 blue
 green
@@ -136,16 +136,48 @@ EOF
     kc_test_run_case "custom separator set" "$expected" ./ngram -sep ",;" "red,blue;green" || failed=$((failed + 1))
 
     expected="$(cat <<'EOF'
+red,,blue;green
+red,,blue
+blue;green
+red
+blue
+green
+EOF
+)"
+    kc_test_run_case "custom separators preserve original bytes" "$expected" ./ngram -sep ",;" "red,,blue;green" || failed=$((failed + 1))
+
+    expected="$(cat <<'EOF'
+one  two   three
+one  two
+two   three
+one
+two
+three
+EOF
+)"
+    kc_test_run_case "default separators preserve repeated spaces" "$expected" ./ngram "one  two   three" || failed=$((failed + 1))
+
+    expected="$(cat <<'EOF'
 one two three
 EOF
 )"
     kc_test_run_case "span closing command" "$expected" ./ngram -cmd 'sh -c '\''cat >/dev/null; echo cut'\''' "one two three" || failed=$((failed + 1))
 
     expected="$(cat <<'EOF'
+one two
+two three
+three
+EOF
+)"
+    kc_test_run_case "closed span pruning keeps partial overlaps" "$expected" ./ngram -max 2 -min 1 -cmd "sh -c 'grep -qx \"one two\" && echo cut'" "one two three" || failed=$((failed + 1))
+
+    expected="$(cat <<'EOF'
 one two three
 EOF
 )"
     kc_test_run_pipe_case "stdin input" "one two three" "$expected" ./ngram -max 3 -min 3 || failed=$((failed + 1))
+
+    kc_test_run_case "large stdin beyond fixed cap" "70001" bash -lc "awk 'BEGIN { for (i = 0; i < 70000; i++) printf \"a\"; }' | ./ngram | wc -c | tr -d '[:space:]'" || failed=$((failed + 1))
 
     echo "---------------------------------"
     if [ "$failed" -eq 0 ]; then

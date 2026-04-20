@@ -9,20 +9,26 @@
 #ifndef NGRAM_H
 #define NGRAM_H
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
  * One emitted chunk.
- * @param text Joined token text for the current span.
+ * @param input Original input buffer backing this span.
+ * @param byte_start Inclusive byte start offset in the original input.
+ * @param byte_end Exclusive byte end offset in the original input.
  * @param start Inclusive token start index.
  * @param end Inclusive token end index.
  * @param size Number of tokens in the span.
  * @return No return value.
  */
 typedef struct {
-    const char *text;
+    const char *input;
+    size_t byte_start;
+    size_t byte_end;
     int start;
     int end;
     int size;

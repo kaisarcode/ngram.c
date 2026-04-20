@@ -23,7 +23,6 @@
 #include <unistd.h>
 #endif
 
-#define KC_NGRAM_TEXT_CAP 65536
 #define KC_NGRAM_VERSION "0.1.0"
 
 typedef struct {
@@ -34,6 +33,12 @@ typedef struct {
     char **items;
     int count;
 } kc_ngram_arg_list_t;
+
+typedef struct {
+    char *data;
+    size_t length;
+    size_t capacity;
+} kc_ngram_string_t;
 
 /**
  * Duplicates one string into heap memory.
@@ -77,6 +82,88 @@ static void kc_ngram_free_args(kc_ngram_arg_list_t *args) {
     free(args->items);
     args->items = NULL;
     args->count = 0;
+}
+
+/**
+ * Returns the exact byte length for one chunk span.
+ * @param chunk Current chunk.
+ * @return Span length in bytes.
+ */
+static size_t kc_ngram_chunk_length(const kc_ngram_chunk_t *chunk) {
+    if (
+        chunk == NULL ||
+        chunk->input == NULL ||
+        chunk->byte_end < chunk->byte_start
+    ) {
+        return 0U;
+    }
+
+    return chunk->byte_end - chunk->byte_start;
+}
+
+/**
+ * Returns the exact byte pointer for one chunk span.
+ * @param chunk Current chunk.
+ * @return Pointer to the first byte of the span, or NULL on invalid input.
+ */
+static const char *kc_ngram_chunk_data(const kc_ngram_chunk_t *chunk) {
+    if (chunk == NULL || chunk->input == NULL) {
+        return NULL;
+    }
+
+    return chunk->input + chunk->byte_start;
+}
+
+/**
+ * Releases one dynamic string buffer.
+ * @param string Buffer to release.
+ * @return No return value.
+ */
+static void kc_ngram_string_free(kc_ngram_string_t *string) {
+    if (string == NULL) {
+        return;
+    }
+
+    free(string->data);
+    string->data = NULL;
+    string->length = 0U;
+    string->capacity = 0U;
+}
+
+/**
+ * Ensures one dynamic string buffer can hold the required size.
+ * @param string Buffer to grow.
+ * @param required Required size including trailing NUL.
+ * @return 0 on success, or -1 on failure.
+ */
+static int kc_ngram_string_reserve(
+    kc_ngram_string_t *string,
+    size_t required
+) {
+    char *next_data;
+    size_t next_capacity;
+
+    if (string == NULL) {
+        return -1;
+    }
+
+    if (required <= string->capacity) {
+        return 0;
+    }
+
+    next_capacity = string->capacity > 0U ? string->capacity : 4096U;
+    while (next_capacity < required) {
+        next_capacity *= 2U;
+    }
+
+    next_data = (char *)realloc(string->data, next_capacity);
+    if (next_data == NULL) {
+        return -1;
+    }
+
+    string->data = next_data;
+    string->capacity = next_capacity;
+    return 0;
 }
 
 /**
@@ -479,21 +566,37 @@ static int kc_ngram_build_windows_command_line(
  * @param size Buffer size in bytes.
  * @return Pointer to buffer on success, or NULL on empty input.
  */
-static const char *kc_ngram_read_stdin(char *buffer, size_t size) {
+static char *kc_ngram_read_stdin(void) {
+    kc_ngram_string_t input;
+    char chunk[4096];
     size_t n;
 
-    if (buffer == NULL || size < 2U) {
+    input.data = NULL;
+    input.length = 0U;
+    input.capacity = 0U;
+
+    while ((n = fread(chunk, 1, sizeof(chunk), stdin)) > 0U) {
+        if (
+            kc_ngram_string_reserve(
+                &input,
+                input.length + n + 1U
+            ) != 0
+        ) {
+            kc_ngram_string_free(&input);
+            return NULL;
+        }
+
+        memcpy(input.data + input.length, chunk, n);
+        input.length += n;
+    }
+
+    if (input.length == 0U) {
+        kc_ngram_string_free(&input);
         return NULL;
     }
 
-    n = fread(buffer, 1, size - 1U, stdin);
-
-    if (n == 0U) {
-        return NULL;
-    }
-
-    buffer[n] = '\0';
-    return buffer;
+    input.data[input.length] = '\0';
+    return input.data;
 }
 
 /**
@@ -667,7 +770,13 @@ static int kc_ngram_run_command(
     close(stdin_pipe[0]);
     close(stdout_pipe[1]);
 
-    if (kc_ngram_write_all(stdin_pipe[1], chunk->text, strlen(chunk->text)) != 0) {
+    if (
+        kc_ngram_write_all(
+            stdin_pipe[1],
+            kc_ngram_chunk_data(chunk),
+            kc_ngram_chunk_length(chunk)
+        ) != 0
+    ) {
         close(stdin_pipe[1]);
         close(stdout_pipe[0]);
         waitpid(pid, NULL, 0);
@@ -853,7 +962,13 @@ static int kc_ngram_run_command(
     CloseHandle(stdin_read);
     CloseHandle(stdout_write);
 
-    if (kc_ngram_write_all(stdin_write, chunk->text, strlen(chunk->text)) != 0) {
+    if (
+        kc_ngram_write_all(
+            stdin_write,
+            kc_ngram_chunk_data(chunk),
+            kc_ngram_chunk_length(chunk)
+        ) != 0
+    ) {
         CloseHandle(stdin_write);
         CloseHandle(stdout_read);
         WaitForSingleObject(pi.hProcess, INFINITE);
@@ -929,12 +1044,26 @@ static int kc_ngram_cli_visit(
     void *context
 ) {
     kc_ngram_cli_context_t *cli_context;
+    const char *chunk_data;
+    size_t chunk_length;
 
     if (chunk == NULL) {
         return -1;
     }
 
-    printf("%s\n", chunk->text);
+    chunk_data = kc_ngram_chunk_data(chunk);
+    chunk_length = kc_ngram_chunk_length(chunk);
+
+    if (
+        chunk_length > 0U &&
+        fwrite(chunk_data, 1, chunk_length, stdout) != chunk_length
+    ) {
+        return -1;
+    }
+
+    if (fputc('\n', stdout) == EOF) {
+        return -1;
+    }
 
     cli_context = (kc_ngram_cli_context_t *)context;
 
@@ -956,10 +1085,10 @@ static int kc_ngram_cli_visit(
  * @return Exit status.
  */
 int main(int argc, char **argv) {
-    char buffer[KC_NGRAM_TEXT_CAP];
     kc_ngram_options_t options;
     kc_ngram_cli_context_t context;
     const char *text;
+    char *stdin_text;
     int i;
 
     if (kc_ngram_options_default(&options) != 0) {
@@ -968,6 +1097,7 @@ int main(int argc, char **argv) {
 
     context.command = NULL;
     text = NULL;
+    stdin_text = NULL;
 
     for (i = 1; i < argc; i++) {
         if (
@@ -1056,10 +1186,12 @@ int main(int argc, char **argv) {
     }
 
     if (text == NULL) {
-        text = kc_ngram_read_stdin(buffer, sizeof(buffer));
+        stdin_text = kc_ngram_read_stdin();
+        text = stdin_text;
     }
 
     if (text == NULL || *text == '\0') {
+        free(stdin_text);
         return 0;
     }
 
@@ -1071,8 +1203,10 @@ int main(int argc, char **argv) {
             &context
         ) < 0
     ) {
+        free(stdin_text);
         return 1;
     }
 
+    free(stdin_text);
     return 0;
 }
