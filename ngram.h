@@ -49,6 +49,7 @@ typedef struct {
 
 /**
  * Callback invoked for each emitted chunk.
+ * The callback is invoked synchronously from the calling thread.
  * @param chunk Current emitted chunk.
  * @param context Caller-provided opaque context.
  * @return 1 to close the span, 0 to keep it open, or -1 to abort traversal.
@@ -64,6 +65,7 @@ int kc_ngram_options_default(kc_ngram_options_t *options);
 
 /**
  * Executes descending sliding-window traversal for the given input text.
+ * This function is reentrant and uses only per-call traversal state.
  * @param input Input text to tokenize and traverse.
  * @param options Traversal options, or NULL to use defaults.
  * @param visit Callback invoked for each chunk.

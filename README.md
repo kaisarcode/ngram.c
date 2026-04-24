@@ -1,6 +1,6 @@
-# ngram - N-gram Text Processing
+# ngram - Descending N-gram Traversal
 
-A minimalist C library for N-gram text analysis and processing. Specialized for efficient sequence extraction and counting from large text corpora.
+ngram is a descending sliding-window n-gram traversal library. It emits token spans from the largest possible window down to the smallest. It can optionally close spans when the callback returns 1, effectively "consuming" the tokens.
 
 ---
 
@@ -9,38 +9,51 @@ A minimalist C library for N-gram text analysis and processing. Specialized for 
 ### Build
 Requires a C compiler and CMake 3.14+.
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release
+cmake -B build -DNGRAM_NATIVE=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
 ```
-*The `ngram` binary will be generated directly in the root directory.*
+*The `ngram` binary is generated directly in the root directory.*
 
 ### Usage
 ```bash
-./ngram -n 3 "The quick brown fox"
+ngram [options] [text]
 ```
 
----
-
-## Features
-- **Efficient Extraction**: Fast tokenization and N-gram generation.
-- **Unified Build**: Single CMake workflow for all platforms.
-- **Minimalist**: Focused, autonomous implementation.
-- **Native Performance**: Optimized for standard CPU architectures.
+**Options:**
+- `--max` / `-max <n>`: Maximum window size (default: 10).
+- `--min` / `-min <n>`: Minimum window size (default: 1).
+- `--sep` / `-sep <s>`: Token separators (default: " \t\n\r").
+- `--cmd` / `-cmd <cmd>`: Shell command to execute for each n-gram.
+- `--help` / `-h`: Show help.
+- `--version` / `-v`: Show version.
 
 ---
 
 ## Public API
-```c
-#include "ngram.h"
 
-// Initialize context
-kc_ngram_t *ctx = kc_ngram_open(n);
+### Types
+- `kc_ngram_options_t`: Configuration for traversal (max/min tokens, separators).
+- `kc_ngram_chunk_t`: Represents an emitted span (pointer to input, byte offsets, token range).
+- `kc_ngram_visit_fn`: Callback type for chunk processing.
 
-// Process input
-kc_ngram_exec(ctx, "Input text data");
+### Functions
+- `kc_ngram_options_default(kc_ngram_options_t *options)`: Initialize options with defaults.
+- `kc_ngram_execute(const char *input, const kc_ngram_options_t *opts, kc_ngram_visit_fn visit, void *ctx)`: Run the traversal.
 
-// Clean up
-kc_ngram_close(ctx);
-```
+---
+
+## Thread-safety / reentrancy
+
+Thread-safety:
+ngram has no global mutable library state.
+
+kc_ngram_execute() allocates and owns all traversal state for the duration of the call. It is reentrant and may be called concurrently from multiple threads, as long as each caller provides its own input, options, callback context, and output handling.
+
+The library does not create worker threads and does not use internal locking.
+
+Callbacks are executed synchronously by the calling thread. If a callback writes to shared state, the caller is responsible for synchronizing that shared state.
+
+The CLI --cmd option may spawn child processes, but that is CLI behavior, not library-level threading.
 
 ---
 
