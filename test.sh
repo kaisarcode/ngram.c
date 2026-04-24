@@ -24,7 +24,6 @@ kc_test_pass() {
 # @return 0 on success, 1 on failure.
 kc_test_check_binary() {
     if [ ! -f "./ngram" ]; then
-        echo "[ERROR] ngram binary not found. Please compile first."
         return 1
     fi
 
@@ -50,10 +49,6 @@ kc_test_run_case() {
     fi
 
     kc_test_fail "$label"
-    echo "Expected:"
-    printf '%s\n' "$expected"
-    echo "Actual:"
-    printf '%s\n' "$actual"
     return 1
 }
 
@@ -92,9 +87,6 @@ kc_test_main() {
     local expected
 
     kc_test_check_binary || exit 1
-
-    echo "Starting ngram validation suite..."
-    echo "---------------------------------"
 
     expected="$(cat <<'EOF'
 one two three
@@ -237,13 +229,10 @@ EOF
 
     kc_test_run_case "large stdin beyond fixed cap" "70001" bash -lc "awk 'BEGIN { for (i = 0; i < 70000; i++) printf \"a\"; }' | ./ngram | wc -c | tr -d '[:space:]'" || failed=$((failed + 1))
 
-    echo "---------------------------------"
     if [ "$failed" -eq 0 ]; then
-        echo "[SUCCESS] All ngram tests passed!"
         return 0
     fi
 
-    echo "[FAILURE] $failed tests failed."
     return 1
 }
 
