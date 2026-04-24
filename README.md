@@ -46,10 +46,10 @@ kc_ngram_close(ctx);
 
 **Author:** KaisarCode
 
-**Email:** [kaisar@kaisarcode.com](mailto:kaisar@kaisarcode.com)
+**Email:** <kaisar@kaisarcode.com>
 
-**Website:** https://kaisarcode.com
+**Website:** [https://kaisarcode.com](https://kaisarcode.com)
 
-**License:** https://www.gnu.org/licenses/gpl-3.0.html
+**License:** [GNU GPL v3.0](https://www.gnu.org/licenses/gpl-3.0.html)
 
 © 2026 KaisarCode
