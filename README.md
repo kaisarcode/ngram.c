@@ -1,65 +1,109 @@
 # ngram - Descending N-gram Traversal
 
-ngram is a descending sliding-window n-gram traversal library. It emits token spans from the largest possible window down to the smallest. It can optionally close spans when the callback returns 1, effectively "consuming" the tokens.
+ngram emits token spans from the largest configured window down to the
+smallest configured window. A callback may close a span, which suppresses later
+windows fully contained inside that span.
 
----
+## Build
 
-## Quick Start
-
-### Build
-Requires a C compiler and CMake 3.14+.
 ```bash
-cmake -B build -DNGRAM_NATIVE=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
-```
-*The `ngram` binary is generated directly in the root directory.*
-
-### Usage
-```bash
-ngram [options] [text]
+make x86_64/linux
 ```
 
-**Options:**
-- `--max` / `-max <n>`: Maximum window size (default: 10).
-- `--min` / `-min <n>`: Minimum window size (default: 1).
-- `--sep` / `-sep <s>`: Token separators (default: " \t\n\r").
-- `--cmd` / `-cmd <cmd>`: Shell command to execute for each n-gram.
-- `--help` / `-h`: Show help.
-- `--version` / `-v`: Show version.
+The standard build creates artifacts under `bin/{arch}/{platform}/`:
 
----
+- `ngram`
+- `libngram.a`
+- `libngram.so`
+
+Windows targets produce `ngram.exe`, `libngram.a`, `libngram.dll.a`, and
+`libngram.dll`.
+
+The default `all` target builds Linux, Windows, and Android artifacts for all
+supported architectures. `make clean` removes only `.build/`.
+
+Native CPU tuning is disabled by default. Enable it only for local native builds
+with:
+
+```bash
+cmake -S . -B .build/native -DNGRAM_NATIVE=ON
+```
+
+## Usage
+
+```bash
+./bin/x86_64/linux/ngram [options] [text]
+```
+
+Options:
+
+- `--max`, `-max <n>`: Maximum tokens per span.
+- `--min`, `-min <n>`: Minimum tokens per span.
+- `--sep`, `-sep <s>`: Separator byte set.
+- `--cmd`, `-cmd <cmd>`: Execute a command for each emitted span.
+- `--help`, `-h`: Show help.
+- `--version`, `-v`: Show version.
+
+When `text` is omitted, the CLI reads standard input. Each span is printed
+before `--cmd` is evaluated. If the command writes any stdout, the current span
+is closed.
 
 ## Public API
 
-### Types
-- `kc_ngram_options_t`: Configuration for traversal (max/min tokens, separators).
-- `kc_ngram_chunk_t`: Represents an emitted span (pointer to input, byte offsets, token range).
-- `kc_ngram_visit_fn`: Callback type for chunk processing.
+`kc_ngram_options_t` configures traversal:
 
-### Functions
-- `kc_ngram_options_default(kc_ngram_options_t *options)`: Initialize options with defaults.
-- `kc_ngram_execute(const char *input, const kc_ngram_options_t *opts, kc_ngram_visit_fn visit, void *ctx)`: Run the traversal.
+- `max_tokens`: Maximum window size.
+- `min_tokens`: Minimum window size.
+- `separators`: Separator byte set.
 
----
+`kc_ngram_chunk_t` describes one emitted span. Its `input` pointer is the
+caller-owned input buffer passed to `kc_ngram_execute()`. The pointer remains
+valid only while the caller keeps that input buffer valid.
 
-## Thread-safety / reentrancy
+```c
+int kc_ngram_options_default(kc_ngram_options_t *options);
 
-Thread-safety:
-ngram has no global mutable library state.
+int kc_ngram_execute(
+    const char *input,
+    const kc_ngram_options_t *options,
+    kc_ngram_visit_fn visit,
+    void *context
+);
+```
 
-kc_ngram_execute() allocates and owns all traversal state for the duration of the call. It is reentrant and may be called concurrently from multiple threads, as long as each caller provides its own input, options, callback context, and output handling.
+`kc_ngram_execute()` owns temporary traversal storage for the duration of the
+call and releases it before returning. It does not take ownership of `input`,
+`options`, `visit`, or `context`.
 
-The library does not create worker threads and does not use internal locking.
+The callback returns:
 
-Callbacks are executed synchronously by the calling thread. If a callback writes to shared state, the caller is responsible for synchronizing that shared state.
+- `1` to close the emitted span.
+- `0` to keep traversal open.
+- `-1` to abort traversal.
 
-The CLI --cmd option may spawn child processes, but that is CLI behavior, not library-level threading.
+## Threading
+
+The library has no global mutable state. `kc_ngram_execute()` is reentrant and
+may be called concurrently from multiple caller-created threads when each call
+uses independent input, options, callback context, and output handling.
+
+Callbacks run synchronously in the calling thread because callback results alter
+later traversal by closing spans. The CLI may spawn child processes for `--cmd`;
+that behavior is outside the library API.
+
+## Validation
+
+```bash
+make x86_64/linux
+make test
+kc kcs .
+```
 
 ---
 
 **Author:** KaisarCode
 
-**Email:** <kaisar@kaisarcode.com>
+**Email:** kaisarcode@gmail.com
 
 **Website:** [https://kaisarcode.com](https://kaisarcode.com)
 

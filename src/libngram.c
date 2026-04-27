@@ -179,12 +179,11 @@ static int kc_ngram_split_tokens(
 }
 
 /**
- * Returns whether one span is fully contained inside a closed span.
+ * Finds where one span should be inserted by start index.
+ * @param spans Sorted span array.
+ * @param count Number of spans.
  * @param start Inclusive candidate start index.
- * @param end Inclusive candidate end index.
- * @param closed_spans Closed span array.
- * @param closed_count Number of closed spans.
- * @return 1 when the span is closed, or 0 otherwise.
+ * @return Insertion index.
  */
 static int kc_ngram_find_span_insert_index(
     const kc_ngram_span_t *spans,

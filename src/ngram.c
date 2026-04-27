@@ -237,38 +237,6 @@ static int kc_ngram_push_arg(kc_ngram_arg_list_t *args, const char *text) {
 }
 
 /**
- * Finalizes one parsed token into the command list.
- * @param args Destination argument list.
- * @param token Mutable token buffer.
- * @param length Token length in bytes.
- * @return 0 on success, or -1 on failure.
- */
-static int kc_ngram_finish_token(
-    kc_ngram_arg_list_t *args,
-    char **token,
-    size_t *length
-) {
-    int rc;
-
-    if (args == NULL || token == NULL || length == NULL) {
-        return -1;
-    }
-
-    if (*length == 0U) {
-        return 0;
-    }
-
-    if (kc_ngram_push_char(token, length, &(size_t){*length + 1U}, '\0') != 0) {
-        return -1;
-    }
-
-    (*length)--;
-    rc = kc_ngram_push_arg(args, *token);
-    *length = 0U;
-    return rc;
-}
-
-/**
  * Parses one command string into executable arguments.
  * @param command Raw command string.
  * @param args Destination argument list.
