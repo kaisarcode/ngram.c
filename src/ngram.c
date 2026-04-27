@@ -373,6 +373,8 @@ static int kc_ngram_parse_command(
     return 0;
 }
 
+#ifdef _WIN32
+
 /**
  * Builds one Windows command line string from parsed arguments.
  * @param args Parsed argument list.
@@ -527,6 +529,7 @@ static int kc_ngram_build_windows_command_line(
     *out_command_line = command_line;
     return 0;
 }
+#endif
 
 /**
  * Reads text from standard input into the provided buffer.
