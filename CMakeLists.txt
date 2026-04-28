@@ -23,7 +23,7 @@ set_target_properties(ngram_shared PROPERTIES OUTPUT_NAME ngram PREFIX "lib")
 target_include_directories(ngram_shared PRIVATE src)
 
 add_library(ngram_static STATIC ${NGRAM_SOURCES})
-set_target_properties(ngram_static PROPERTIES OUTPUT_NAME ngram PREFIX "lib")
+set_target_properties(ngram_static PROPERTIES OUTPUT_NAME ngram PREFIX "lib" POSITION_INDEPENDENT_CODE ON)
 target_include_directories(ngram_static PRIVATE src)
 
 add_executable(ngram_exe src/ngram.c ${NGRAM_SOURCES})
