@@ -427,7 +427,7 @@ int kc_ngram_execute(
         options = &local_options;
     }
 
-    if (options->min_tokens < 1 || options->max_tokens < options->min_tokens) {
+    if (options->min_tokens < 1 || (options->max_tokens > 0 && options->max_tokens < options->min_tokens)) {
         return -1;
     }
 
@@ -445,7 +445,7 @@ int kc_ngram_execute(
     closed_cap = 0;
 
     loop_max = options->max_tokens;
-    if (tokens.count < loop_max) {
+    if (loop_max == 0 || tokens.count < loop_max) {
         loop_max = tokens.count;
     }
 
