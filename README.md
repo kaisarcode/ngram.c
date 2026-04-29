@@ -4,32 +4,60 @@ ngram emits token spans from the largest configured window down to the
 smallest configured window. A callback may close a span, which suppresses later
 windows fully contained inside that span.
 
+## File Layout
+
+```
+ngram.c/
+├── src/
+│   ├── ngram.c        CLI entry point (main)
+│   ├── libngram.c     Core library implementation
+│   └── ngram.h        Public API header
+├── bin/               Compiled artifacts (committed, Git LFS)
+│   ├── x86_64/{linux,windows}
+│   ├── i686/{linux,windows}
+│   ├── aarch64/{linux,android}
+│   ├── armv7/{linux,android}
+│   ├── armv7hf/linux
+│   ├── riscv64/linux
+│   ├── powerpc64le/linux
+│   ├── mips/linux  mipsel/linux  mips64el/linux
+│   ├── s390x/linux
+│   └── loongarch64/linux
+├── CMakeLists.txt
+├── Makefile
+├── test.sh
+└── README.md
+```
+
 ## Build
 
 ```bash
+make all              # all 16 targets
 make x86_64/linux
+make x86_64/windows
+make i686/linux
+make i686/windows
+make aarch64/linux
+make aarch64/android
+make armv7/linux
+make armv7/android
+make armv7hf/linux
+make riscv64/linux
+make powerpc64le/linux
+make mips/linux
+make mipsel/linux
+make mips64el/linux
+make s390x/linux
+make loongarch64/linux
+make clean
 ```
 
-The standard build creates artifacts under `bin/{arch}/{platform}/`:
+Each target produces under `bin/{arch}/{platform}/`:
+- `libngram.a` — static library
+- `libngram.so` / `libngram.dll` / `libngram.dll.a` — shared library and import lib
+- `ngram` / `ngram.exe` — CLI executable
 
-- `ngram`
-- `libngram.a`
-- `libngram.so`
-
-Windows targets produce `ngram.exe`, `libngram.a`, `libngram.dll.a`, and
-`libngram.dll`.
-
-The default `all` target builds Linux, Windows, and Android artifacts for all
-supported architectures. `make clean` removes only `.build/`.
-
-Native CPU tuning is disabled by default. Enable it only for local native builds
-with:
-
-```bash
-cmake -S . -B .build/native -DNGRAM_NATIVE=ON
-```
-
-## Usage
+## CLI
 
 ```bash
 ./bin/x86_64/linux/ngram [options] [text]
