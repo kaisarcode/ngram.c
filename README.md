@@ -1,38 +1,86 @@
-# ngram - Descending N-gram Traversal
+# ngram.c - Sliding-window n-gram traversal
 
-ngram emits token spans from the largest configured window down to the
-smallest configured window. A callback may close a span, which suppresses later
-windows fully contained inside that span.
+`ngram.c` is a minimalist C library and CLI for descending sliding-window n-gram traversal of text. It enables semantic analysis by emitting token spans and executing commands for each chunk, designed as a composable native primitive for the KaisarCode ecosystem.
 
-## File Layout
+---
+
+## CLI
+
+Traverse text and emit n-gram chunks based on token window constraints.
+
+### Examples
+
+Basic n-gram extraction (default 1-5 tokens):
+
+```bash
+./bin/x86_64/linux/ngram "The quick brown fox"
+```
+
+Extraction with custom window size and separators:
+
+```bash
+./bin/x86_64/linux/ngram --max 3 --min 2 --sep " ," "The quick brown fox"
+```
+
+Execute a command for each chunk and close span on stdout:
+
+```bash
+./bin/x86_64/linux/ngram --cmd "grep -q fox" "The quick brown fox"
+```
+
+---
+
+### Parameters
+
+| Flag | Description |
+| :--- | :--- |
+| `--max, -max <n>` | Maximum tokens per block |
+| `--min, -min <n>` | Minimum tokens per block |
+| `--sep, -sep <s>` | Custom separator characters |
+| `--cmd, -cmd <cmd>` | Execute command for each chunk |
+| `--help, -h` | Show help and usage |
+| `--version, -v` | Show version |
+
+---
+
+### Output
+
+Chunks are printed to stdout, one per line:
 
 ```
-ngram.c/
-├── src/
-│   ├── ngram.c        CLI entry point (main)
-│   ├── libngram.c     Core library implementation
-│   └── ngram.h        Public API header
-├── bin/               Compiled artifacts (committed, Git LFS)
-│   ├── x86_64/{linux,windows}
-│   ├── i686/{linux,windows}
-│   ├── aarch64/{linux,android}
-│   ├── armv7/{linux,android}
-│   ├── armv7hf/linux
-│   ├── riscv64/linux
-│   ├── powerpc64le/linux
-│   ├── mips/linux  mipsel/linux  mips64el/linux
-│   ├── s390x/linux
-│   └── loongarch64/linux
-├── CMakeLists.txt
-├── Makefile
-├── test.sh
-└── README.md
+The quick brown fox
+The quick brown
+quick brown fox
+The quick
+quick brown
+brown fox
 ```
+
+---
+
+## Public API
+
+```c
+#include "ngram.h"
+
+int my_visitor(const kc_ngram_chunk_t *chunk, void *context) {
+    printf("%.*s\n", (int)(chunk->byte_end - chunk->byte_start), chunk->input + chunk->byte_start);
+    return 0; // 1 to close span, -1 to abort
+}
+
+kc_ngram_options_t options;
+kc_ngram_options_default(&options);
+options.max_tokens = 3;
+
+kc_ngram_execute("The quick brown fox", &options, my_visitor, NULL);
+```
+
+---
 
 ## Build
 
 ```bash
-make all              # all 16 targets
+make all
 make x86_64/linux
 make x86_64/windows
 make i686/linux
@@ -52,79 +100,10 @@ make loongarch64/linux
 make clean
 ```
 
-Each target produces under `bin/{arch}/{platform}/`:
-- `libngram.a` — static library
-- `libngram.so` / `libngram.dll` / `libngram.dll.a` — shared library and import lib
-- `ngram` / `ngram.exe` — CLI executable
+Artifacts are generated under:
 
-## CLI
-
-```bash
-./bin/x86_64/linux/ngram [options] [text]
 ```
-
-Options:
-
-- `--max`, `-max <n>`: Maximum tokens per span.
-- `--min`, `-min <n>`: Minimum tokens per span.
-- `--sep`, `-sep <s>`: Separator byte set.
-- `--cmd`, `-cmd <cmd>`: Execute a command for each emitted span.
-- `--help`, `-h`: Show help.
-- `--version`, `-v`: Show version.
-
-When `text` is omitted, the CLI reads standard input. Each span is printed
-before `--cmd` is evaluated. If the command writes any stdout, the current span
-is closed.
-
-## Public API
-
-`kc_ngram_options_t` configures traversal:
-
-- `max_tokens`: Maximum window size.
-- `min_tokens`: Minimum window size.
-- `separators`: Separator byte set.
-
-`kc_ngram_chunk_t` describes one emitted span. Its `input` pointer is the
-caller-owned input buffer passed to `kc_ngram_execute()`. The pointer remains
-valid only while the caller keeps that input buffer valid.
-
-```c
-int kc_ngram_options_default(kc_ngram_options_t *options);
-
-int kc_ngram_execute(
-    const char *input,
-    const kc_ngram_options_t *options,
-    kc_ngram_visit_fn visit,
-    void *context
-);
-```
-
-`kc_ngram_execute()` owns temporary traversal storage for the duration of the
-call and releases it before returning. It does not take ownership of `input`,
-`options`, `visit`, or `context`.
-
-The callback returns:
-
-- `1` to close the emitted span.
-- `0` to keep traversal open.
-- `-1` to abort traversal.
-
-## Threading
-
-The library has no global mutable state. `kc_ngram_execute()` is reentrant and
-may be called concurrently from multiple caller-created threads when each call
-uses independent input, options, callback context, and output handling.
-
-Callbacks run synchronously in the calling thread because callback results alter
-later traversal by closing spans. The CLI may spawn child processes for `--cmd`;
-that behavior is outside the library API.
-
-## Validation
-
-```bash
-make x86_64/linux
-make test
-kc kcs .
+bin/{arch}/{platform}/
 ```
 
 ---
