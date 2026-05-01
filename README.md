@@ -28,6 +28,12 @@ Execute a command for each chunk and close span on stdout:
 ./bin/x86_64/linux/ngram --cmd "grep -q fox" "The quick brown fox"
 ```
 
+Standard input processing:
+
+```bash
+echo "The quick brown fox" | ./bin/x86_64/linux/ngram
+```
+
 ---
 
 ### Parameters
