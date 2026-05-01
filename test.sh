@@ -268,6 +268,14 @@ EOF
     kc_test_run_case "stress overlapping trigram closures" "$expected" "$BIN" -max 3 -min 1 -cmd "sh -c 'grep -Eq \"^[^ ]+ [^ ]+ [^ ]+$\" && echo cut'" "t0 t1 t2 t3 t4 t5 t6" || failed=$((failed + 1))
 
     expected="$(cat <<'EOF'
+hola mundo
+hola
+mundo
+EOF
+)"
+    kc_test_run_pipe_case "manual hola mundo test" "hola mundo" "$expected" "$BIN" || failed=$((failed + 1))
+
+    expected="$(cat <<'EOF'
 one two three
 EOF
 )"

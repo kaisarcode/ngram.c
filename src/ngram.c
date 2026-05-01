@@ -533,14 +533,17 @@ static int kc_ngram_build_windows_command_line(
 
 /**
  * Reads text from standard input into the provided buffer.
- * @param buffer Destination buffer.
- * @param size Buffer size in bytes.
- * @return Pointer to buffer on success, or NULL on empty input.
+ * @param out_text Destination pointer for the allocated text.
+ * @return 0 on success, or -1 on failure.
  */
-static char *kc_ngram_read_stdin(void) {
+static int kc_ngram_read_stdin(char **out_text) {
     kc_ngram_string_t input;
     char chunk[4096];
     size_t n;
+
+    if (out_text == NULL) {
+        return -1;
+    }
 
     input.data = NULL;
     input.length = 0U;
@@ -554,20 +557,27 @@ static char *kc_ngram_read_stdin(void) {
             ) != 0
         ) {
             kc_ngram_string_free(&input);
-            return NULL;
+            return -1;
         }
 
         memcpy(input.data + input.length, chunk, n);
         input.length += n;
     }
 
+    if (ferror(stdin)) {
+        kc_ngram_string_free(&input);
+        return -1;
+    }
+
     if (input.length == 0U) {
         kc_ngram_string_free(&input);
-        return NULL;
+        *out_text = NULL;
+        return 0;
     }
 
     input.data[input.length] = '\0';
-    return input.data;
+    *out_text = input.data;
+    return 0;
 }
 
 /**
@@ -1157,7 +1167,10 @@ int main(int argc, char **argv) {
     }
 
     if (text == NULL) {
-        stdin_text = kc_ngram_read_stdin();
+        if (kc_ngram_read_stdin(&stdin_text) != 0) {
+            return 1;
+        }
+
         text = stdin_text;
     }
 
