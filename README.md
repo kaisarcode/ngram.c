@@ -86,6 +86,7 @@ kc_ngram_execute("The quick brown fox", &options, my_visitor, NULL);
 ## Build
 
 ```bash
+make
 make all
 make x86_64/linux
 make x86_64/windows
