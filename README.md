@@ -19,13 +19,13 @@ Basic n-gram extraction (default 1-5 tokens):
 Extraction with custom window size and separators:
 
 ```bash
-./bin/x86_64/linux/ngram --max 3 --min 2 --sep " ," "The quick brown fox"
+./bin/x86_64/linux/ngram "The quick brown fox" --max 3 --min 2 --sep " ,"
 ```
 
 Execute a command for each chunk and close span on stdout:
 
 ```bash
-./bin/x86_64/linux/ngram --cmd "grep -q fox" "The quick brown fox"
+./bin/x86_64/linux/ngram "The quick brown fox" --cmd "grep -q fox"
 ```
 
 Standard input processing:
