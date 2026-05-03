@@ -85,8 +85,17 @@ kc_ngram_execute("The quick brown fox", &options, my_visitor, NULL);
 
 ## Build
 
+Compiled artifacts are generated under `bin/{arch}/{platform}/` for the host architecture running the build.
+
 ```bash
-make
+make clean && make
+```
+
+## Multiarch Builds
+
+The project is prepared to build artifacts for multiple architectures under `bin/{arch}/{platform}/`. A plain `make` builds only the current host architecture, while the targets below build the full matrix or a specific target.
+
+```bash
 make all
 make x86_64/linux
 make x86_64/windows
@@ -104,13 +113,6 @@ make mipsel/linux
 make mips64el/linux
 make s390x/linux
 make loongarch64/linux
-make clean
-```
-
-Artifacts are generated under:
-
-```
-bin/{arch}/{platform}/
 ```
 
 ---
