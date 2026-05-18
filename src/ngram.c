@@ -23,7 +23,7 @@
 #include <unistd.h>
 #endif
 
-#define KC_NGRAM_VERSION "0.1.0"
+#define KC_NGRAM_VERSION "1.0.0"
 
 typedef struct {
     const char *command;
