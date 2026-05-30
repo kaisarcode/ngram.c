@@ -1,6 +1,7 @@
 /**
  * ngram.h
  * Summary: Public API for descending sliding-window n-gram traversal.
+ *
  * Author:  KaisarCode
  * Website: https://kaisarcode.com
  * License: https://www.gnu.org/licenses/gpl-3.0.html
@@ -10,6 +11,9 @@
 #define NGRAM_H
 
 #include <stddef.h>
+
+#define KC_NGRAM_OK      0
+#define KC_NGRAM_ERROR  -1
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,6 +60,8 @@ typedef struct {
  */
 typedef int (*kc_ngram_visit_fn)(const kc_ngram_chunk_t *chunk, void *context);
 
+typedef void (*kc_ngram_signal_callback_t)(void);
+
 /**
  * Fills one options structure with default values.
  * @param options Destination options structure.
@@ -78,6 +84,48 @@ int kc_ngram_execute(
     kc_ngram_visit_fn visit,
     void *context
 );
+
+/**
+ * Loads environment variables from the env config table into options.
+ * @return None.
+ */
+void kc_ngram_options_load_env(kc_ngram_options_t *opts);
+
+/**
+ * Frees any resources held by the options structure.
+ * @return None.
+ */
+void kc_ngram_options_free(kc_ngram_options_t *opts);
+
+/**
+ * Registers or unregisters a callback for a numeric signal ID.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_on_signal(int sig, kc_ngram_signal_callback_t cb);
+
+/**
+ * Dispatches a signal to the registered callback.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_raise_signal(int sig);
+
+/**
+ * Registers the default signal listener for all known signals.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_listen_signals(void);
+
+/**
+ * Registers the default signal listener for a specific signal ID.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_listen_signal(int sig_id);
+
+/**
+ * Default signal listener that dispatches to registered callbacks.
+ * @return None.
+ */
+void kc_ngram_signal_listener(int sig);
 
 #ifdef __cplusplus
 }

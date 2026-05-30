@@ -1,6 +1,7 @@
 /**
  * ngram.c
  * Summary: Portable CLI wrapper for libngram (POSIX + Windows).
+ *
  * Author:  KaisarCode
  * Website: https://kaisarcode.com
  * License: https://www.gnu.org/licenses/gpl-3.0.html
@@ -23,7 +24,7 @@
 #include <unistd.h>
 #endif
 
-#define KC_NGRAM_VERSION "1.0.0"
+#define KC_NGRAM_VERSION "1.1.0"
 
 typedef struct {
     const char *command;
@@ -1070,15 +1071,20 @@ int main(int argc, char **argv) {
     kc_ngram_cli_context_t context;
     const char *text;
     char *stdin_text;
+    int result;
     int i;
 
     if (kc_ngram_options_default(&options) != 0) {
         return 1;
     }
 
+    kc_ngram_options_load_env(&options);
+    kc_ngram_listen_signals();
+
     context.command = NULL;
     text = NULL;
     stdin_text = NULL;
+    result = 0;
 
     for (i = 1; i < argc; i++) {
         if (
@@ -1086,7 +1092,8 @@ int main(int argc, char **argv) {
             strcmp(argv[i], "-h") == 0
         ) {
             kc_ngram_help();
-            return 0;
+            result = 0;
+            goto cleanup;
         }
 
         if (
@@ -1094,7 +1101,8 @@ int main(int argc, char **argv) {
             strcmp(argv[i], "-v") == 0
         ) {
             kc_ngram_version();
-            return 0;
+            result = 0;
+            goto cleanup;
         }
 
         if (
@@ -1102,11 +1110,13 @@ int main(int argc, char **argv) {
             strcmp(argv[i], "-max") == 0
         ) {
             if (i + 1 >= argc) {
-                return kc_ngram_fail_usage("Missing value for --max.");
+                result = kc_ngram_fail_usage("Missing value for --max.");
+                goto cleanup;
             }
 
             if (!kc_ngram_parse_int(argv[i + 1], &options.max_tokens)) {
-                return kc_ngram_fail_usage("Invalid value for --max.");
+                result = kc_ngram_fail_usage("Invalid value for --max.");
+                goto cleanup;
             }
 
             i++;
@@ -1118,11 +1128,13 @@ int main(int argc, char **argv) {
             strcmp(argv[i], "-min") == 0
         ) {
             if (i + 1 >= argc) {
-                return kc_ngram_fail_usage("Missing value for --min.");
+                result = kc_ngram_fail_usage("Missing value for --min.");
+                goto cleanup;
             }
 
             if (!kc_ngram_parse_int(argv[i + 1], &options.min_tokens)) {
-                return kc_ngram_fail_usage("Invalid value for --min.");
+                result = kc_ngram_fail_usage("Invalid value for --min.");
+                goto cleanup;
             }
 
             i++;
@@ -1134,7 +1146,8 @@ int main(int argc, char **argv) {
             strcmp(argv[i], "-sep") == 0
         ) {
             if (i + 1 >= argc) {
-                return kc_ngram_fail_usage("Missing value for --sep.");
+                result = kc_ngram_fail_usage("Missing value for --sep.");
+                goto cleanup;
             }
 
             options.separators = argv[i + 1];
@@ -1147,7 +1160,8 @@ int main(int argc, char **argv) {
             strcmp(argv[i], "-cmd") == 0
         ) {
             if (i + 1 >= argc) {
-                return kc_ngram_fail_usage("Missing value for --cmd.");
+                result = kc_ngram_fail_usage("Missing value for --cmd.");
+                goto cleanup;
             }
 
             context.command = argv[i + 1];
@@ -1156,11 +1170,13 @@ int main(int argc, char **argv) {
         }
 
         if (argv[i][0] == '-') {
-            return kc_ngram_fail_usage("Unknown argument.");
+            result = kc_ngram_fail_usage("Unknown argument.");
+            goto cleanup;
         }
 
         if (text != NULL) {
-            return kc_ngram_fail_usage("Too many positional arguments.");
+            result = kc_ngram_fail_usage("Too many positional arguments.");
+            goto cleanup;
         }
 
         text = argv[i];
@@ -1168,15 +1184,15 @@ int main(int argc, char **argv) {
 
     if (text == NULL) {
         if (kc_ngram_read_stdin(&stdin_text) != 0) {
-            return 1;
+            result = 1;
+            goto cleanup;
         }
 
         text = stdin_text;
     }
 
     if (text == NULL || *text == '\0') {
-        free(stdin_text);
-        return 0;
+        goto cleanup;
     }
 
     if (
@@ -1187,10 +1203,12 @@ int main(int argc, char **argv) {
             &context
         ) < 0
     ) {
-        free(stdin_text);
-        return 1;
+        result = 1;
+        goto cleanup;
     }
 
+cleanup:
     free(stdin_text);
-    return 0;
+    kc_ngram_options_free(&options);
+    return result;
 }

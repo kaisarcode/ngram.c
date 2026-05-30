@@ -1,6 +1,7 @@
 /**
  * libngram.c
  * Summary: Descending sliding-window n-gram traversal library.
+ *
  * Author:  KaisarCode
  * Website: https://kaisarcode.com
  * License: https://www.gnu.org/licenses/gpl-3.0.html
@@ -13,6 +14,42 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#  define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
+#else
+#  include <signal.h>
+#endif
+
+typedef enum {
+    KC_ENV_TYPE_INT,
+    KC_ENV_TYPE_STR,
+} kc_env_type_t;
+
+typedef struct {
+    const char *env_var;
+    size_t offset;
+    kc_env_type_t type;
+} kc_env_map_t;
+
+static const kc_env_map_t env_config_table[] = {
+    { "KC_NGRAM_MAX", offsetof(kc_ngram_options_t, max_tokens), KC_ENV_TYPE_INT },
+    { "KC_NGRAM_MIN", offsetof(kc_ngram_options_t, min_tokens), KC_ENV_TYPE_INT },
+};
+static const int env_config_table_n =
+    sizeof(env_config_table) / sizeof(env_config_table[0]);
+
+typedef struct {
+    int sig;
+    kc_ngram_signal_callback_t cb;
+} kc_ngram_signal_entry_t;
+
+static kc_ngram_signal_entry_t *g_signal_handlers = NULL;
+static int g_n_signal_handlers = 0;
+static int g_signal_handlers_capacity = 0;
 
 typedef struct {
     size_t byte_start;
@@ -373,6 +410,131 @@ static int kc_ngram_add_closed_span(
     (*spans)[insert_at].end = end;
     (*count)++;
     return 0;
+}
+
+/**
+ * Loads environment variables into an options structure.
+ * Reads KC_NGRAM_MAX and KC_NGRAM_MIN from the environment.
+ * @param opts Destination options structure.
+ * @return No return value.
+ */
+void kc_ngram_options_load_env(kc_ngram_options_t *opts) {
+    int i;
+    if (!opts) return;
+    for (i = 0; i < env_config_table_n; i++) {
+        const char *val = getenv(env_config_table[i].env_var);
+        char *end;
+        if (!val) continue;
+        switch (env_config_table[i].type) {
+            case KC_ENV_TYPE_INT: {
+                long v = strtol(val, &end, 10);
+                if (end != val && *end == '\0') {
+                    *(int *)((char *)opts + env_config_table[i].offset) = (int)v;
+                }
+                break;
+            }
+            case KC_ENV_TYPE_STR: {
+                const char **p = (const char **)((char *)opts + env_config_table[i].offset);
+                *p = val;
+                break;
+            }
+        }
+    }
+}
+
+/**
+ * Frees resources held by an options structure.
+ * Currently a no-op placeholder for API symmetry.
+ * @param opts Options structure to release.
+ * @return No return value.
+ */
+void kc_ngram_options_free(kc_ngram_options_t *opts) {
+    (void)opts;
+}
+
+/**
+ * Registers or unregisters a callback for a numeric signal ID.
+ * @param sig Numeric signal identifier.
+ * @param cb Callback, or NULL to unregister.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_on_signal(int sig, kc_ngram_signal_callback_t cb) {
+    int i;
+    for (i = 0; i < g_n_signal_handlers; i++) {
+        if (g_signal_handlers[i].sig == sig) {
+            if (cb) {
+                g_signal_handlers[i].cb = cb;
+            } else {
+                int tail = g_n_signal_handlers - i - 1;
+                if (tail > 0) {
+                    memmove(&g_signal_handlers[i], &g_signal_handlers[i + 1],
+                            (size_t)tail * sizeof(kc_ngram_signal_entry_t));
+                }
+                g_n_signal_handlers--;
+            }
+            return KC_NGRAM_OK;
+        }
+    }
+    if (!cb) return KC_NGRAM_OK;
+    if (g_n_signal_handlers >= g_signal_handlers_capacity) {
+        int new_cap = g_signal_handlers_capacity ? g_signal_handlers_capacity * 2 : 4;
+        kc_ngram_signal_entry_t *p = (kc_ngram_signal_entry_t *)realloc(g_signal_handlers,
+            (size_t)new_cap * sizeof(kc_ngram_signal_entry_t));
+        if (!p) return KC_NGRAM_ERROR;
+        g_signal_handlers = p;
+        g_signal_handlers_capacity = new_cap;
+    }
+    g_signal_handlers[g_n_signal_handlers].sig = sig;
+    g_signal_handlers[g_n_signal_handlers].cb = cb;
+    g_n_signal_handlers++;
+    return KC_NGRAM_OK;
+}
+
+/**
+ * Dispatches a signal to the registered callback.
+ * @param sig Numeric signal identifier.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_raise_signal(int sig) {
+    int i;
+    for (i = 0; i < g_n_signal_handlers; i++) {
+        if (g_signal_handlers[i].sig == sig) {
+            g_signal_handlers[i].cb();
+            return KC_NGRAM_OK;
+        }
+    }
+    return KC_NGRAM_ERROR;
+}
+
+/**
+ * Registers the default signal listener for all known signals.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_listen_signals(void) {
+    return KC_NGRAM_OK;
+}
+
+/**
+ * Default signal listener that dispatches to registered callbacks.
+ * @param sig Received signal number.
+ * @return No return value.
+ */
+void kc_ngram_signal_listener(int sig) {
+    kc_ngram_raise_signal(sig);
+}
+
+/**
+ * Registers the default signal listener for a specific signal ID.
+ * @param sig_id Signal ID to listen for.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_listen_signal(int sig_id) {
+#ifdef _WIN32
+    (void)sig_id;
+#else
+    signal(sig_id, kc_ngram_signal_listener);
+#endif
+    return KC_NGRAM_OK;
 }
 
 /**
