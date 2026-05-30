@@ -622,8 +622,8 @@ static void kc_ngram_help(void) {
     printf("  --min, -min <n>     Minimum tokens per block\n");
     printf("  --sep, -sep <s>     Custom separator characters\n");
     printf("  --cmd, -cmd <cmd>   Execute command for each chunk\n");
-    printf("  --help, -h          Show help\n");
-    printf("  --version, -v       Show version\n\n");
+    printf("  -h, --help          Show help\n");
+    printf("  -v, --version       Show version\n\n");
     printf("Notes:\n");
     printf("  Each chunk is printed before --cmd is evaluated.\n");
     printf("  A span closes when the command produces stdout.\n");
