@@ -24,7 +24,7 @@
 #include <unistd.h>
 #endif
 
-#define KC_NGRAM_VERSION "1.1.0"
+#define KC_NGRAM_VERSION "1.1.1"
 
 typedef struct {
     const char *command;

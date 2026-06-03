@@ -20,9 +20,8 @@
 #  define WIN32_LEAN_AND_MEAN
 #  endif
 #  include <windows.h>
-#else
-#  include <signal.h>
 #endif
+#include <signal.h>
 
 typedef enum {
     KC_ENV_TYPE_INT,
@@ -520,7 +519,10 @@ int kc_ngram_listen_signals(void) {
  * @return No return value.
  */
 void kc_ngram_signal_listener(int sig) {
-    kc_ngram_raise_signal(sig);
+    if (kc_ngram_raise_signal(sig) == 0)
+        return;
+    signal(sig, SIG_DFL);
+    raise(sig);
 }
 
 /**
