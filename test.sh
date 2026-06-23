@@ -1,5 +1,4 @@
 #!/bin/bash
-# Test.sh
 # Summary: Validation suite for ngram CLI traversal behavior.
 # Author:  KaisarCode
 # Website: https://kaisarcode.com
