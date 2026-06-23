@@ -1,5 +1,5 @@
 #!/bin/bash
-# test.sh
+# Test.sh
 # Summary: Validation suite for ngram CLI traversal behavior.
 # Author:  KaisarCode
 # Website: https://kaisarcode.com
@@ -18,6 +18,7 @@ kc_test_fail() {
 # @return 0 on success.
 kc_test_pass() {
     printf "\033[32m[PASS]\033[0m %s\n" "$1"
+    return 0
 }
 
 # Detects the artifact architecture for the current machine.

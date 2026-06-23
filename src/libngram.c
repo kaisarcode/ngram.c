@@ -11,6 +11,10 @@
 
 #include "ngram.h"
 
+#ifndef KC_NGRAM_BUILD_VERSION
+#define KC_NGRAM_BUILD_VERSION 0ULL
+#endif
+
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -663,4 +667,12 @@ int kc_ngram_execute(
     free(closed_spans);
     kc_ngram_free_tokens(&tokens);
     return emitted;
+}
+
+/**
+ * Retrieves the library build version as a Unix timestamp.
+ * @return Build version timestamp.
+ */
+uint64_t kc_ngram_version(void) {
+    return (uint64_t)KC_NGRAM_BUILD_VERSION;
 }

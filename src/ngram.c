@@ -24,8 +24,6 @@
 #include <unistd.h>
 #endif
 
-#define KC_NGRAM_VERSION "1.1.1"
-
 typedef struct {
     const char *command;
 } kc_ngram_cli_context_t;
@@ -630,11 +628,11 @@ static void kc_ngram_help(void) {
 }
 
 /**
- * Prints binary version.
+ * Prints the binary version to stdout.
  * @return No return value.
  */
-static void kc_ngram_version(void) {
-    printf("ngram %s\n", KC_NGRAM_VERSION);
+static void kc_ngram_print_version(void) {
+    printf("ngram build %llu\n", (unsigned long long)kc_ngram_version());
 }
 
 /**
@@ -1100,7 +1098,7 @@ int main(int argc, char **argv) {
             strcmp(argv[i], "--version") == 0 ||
             strcmp(argv[i], "-v") == 0
         ) {
-            kc_ngram_version();
+            kc_ngram_print_version();
             result = 0;
             goto cleanup;
         }

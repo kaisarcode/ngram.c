@@ -11,6 +11,7 @@
 #define NGRAM_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #define KC_NGRAM_OK      0
 #define KC_NGRAM_ERROR  -1
@@ -126,6 +127,12 @@ int kc_ngram_listen_signal(int sig_id);
  * @return None.
  */
 void kc_ngram_signal_listener(int sig);
+
+/**
+ * Retrieves the library build version as a Unix timestamp.
+ * @return Build version timestamp.
+ */
+uint64_t kc_ngram_version(void);
 
 #ifdef __cplusplus
 }

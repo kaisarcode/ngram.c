@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.14)
 project(ngram C)
 
 set(CMAKE_C_STANDARD 11)
+set(KC_NGRAM_BUILD_VERSION "0" CACHE STRING "ngram build version timestamp")
+
 
 option(NGRAM_NATIVE "Enable native CPU optimizations" OFF)
 
@@ -17,6 +19,11 @@ endif()
 
 set(NGRAM_SOURCES src/libngram.c)
 set(NGRAM_HEADERS src/ngram.h)
+
+set_property(
+    SOURCE src/libngram.c
+    APPEND PROPERTY COMPILE_DEFINITIONS KC_NGRAM_BUILD_VERSION=${KC_NGRAM_BUILD_VERSION}
+)
 
 add_library(ngram_shared SHARED ${NGRAM_SOURCES})
 set_target_properties(ngram_shared PROPERTIES OUTPUT_NAME ngram PREFIX "lib")
