@@ -12,6 +12,46 @@ NDK_TOOLCHAIN := $(NDK_DIR)/build/cmake/android.toolchain.cmake
 
 BUILD_DIR := .build
 BIN_DIR   := bin
+CMAKE     ?= cmake
+
+define cmake_build
+	@prelog=$$(mktemp); \
+	if ! $(CMAKE) --build $(1) -- -n > "$$prelog" 2>&1; then \
+		cat "$$prelog"; \
+		rm -f "$$prelog"; \
+		exit 1; \
+	fi; \
+	if grep -q "ninja: no work to do." "$$prelog"; then \
+		rm -f "$$prelog"; \
+		out=$$(mktemp); \
+		$(CMAKE) --build $(1) 2>"$$out"; \
+		r=$$?; \
+		if [ -s "$$out" ]; then grep -v 'skipping incompatible' < "$$out"; fi; \
+		rm -f "$$out"; \
+		exit $$r; \
+	fi; \
+	rm -f "$$prelog"; \
+	out=$$(mktemp); \
+	$(CMAKE) --build $(1) 2>"$$out"; \
+	r=$$?; \
+	if [ -s "$$out" ]; then grep -v 'skipping incompatible' < "$$out"; fi; \
+	rm -f "$$out"; \
+	if [ $$r -ne 0 ]; then \
+		exit 1; \
+	fi; \
+	if [ -n "$(2)" ]; then \
+		ver=$$(date +%s); \
+		$(2); \
+		log=$$(mktemp); \
+		if ! $(CMAKE) --build $(1) > "$$log" 2>&1; then \
+			cat "$$log"; \
+			rm -f "$$log"; \
+			exit 1; \
+		fi; \
+		rm -f "$$log"; \
+	fi; \
+	:
+endef
 
 HOST_ARCH       := $(shell uname -m)
 HOST_SYSTEM     := $(shell uname -s)
@@ -89,44 +129,17 @@ all: \
 
 define linux_target
 	@mkdir -p $(BIN_DIR)/$(1)/linux
-	@cmake -S . -B $(BUILD_DIR)/$(subst /,-,$(1))-linux \
-		-DCMAKE_BUILD_TYPE=Release \
-		-DCMAKE_SYSTEM_NAME=Linux \
-		-DCMAKE_C_COMPILER=$(2) \
-		-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(CURDIR)/$(BUILD_DIR)/$(subst /,-,$(1))-linux/out \
-		-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/linux \
-		-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/linux \
-		-G Ninja -Wno-dev > /dev/null
-	@build_dir=$(BUILD_DIR)/$(subst /,-,$(1))-linux; \
-	build_log=$$build_dir/.ngram-version-build.log; \
-	ninja_log=$$build_dir/.ninja_log; \
-	before_lines=0; \
-	if [ -f "$$ninja_log" ]; then before_lines=$$(wc -l < "$$ninja_log"); fi; \
-	cmake --build $$build_dir; \
-	after_lines=0; \
-	if [ -f "$$ninja_log" ]; then after_lines=$$(wc -l < "$$ninja_log"); fi; \
-	if [ "$$after_lines" -gt "$$before_lines" ]; then \
-		build_version=$$(date +%s); \
-		if ! cmake -S . -B $$build_dir \
+	@if [ ! -f $(BUILD_DIR)/$(subst /,-,$(1))-linux/CMakeCache.txt ]; then \
+		$(CMAKE) -S . -B $(BUILD_DIR)/$(subst /,-,$(1))-linux \
 			-DCMAKE_BUILD_TYPE=Release \
 			-DCMAKE_SYSTEM_NAME=Linux \
 			-DCMAKE_C_COMPILER=$(2) \
-			-DKC_NGRAM_BUILD_VERSION=$$build_version \
-			-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(CURDIR)/$$build_dir/out \
+			-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(CURDIR)/$(BUILD_DIR)/$(subst /,-,$(1))-linux/out \
 			-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/linux \
 			-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/linux \
-			-G Ninja -Wno-dev > $$build_log 2>&1; then \
-			cat $$build_log; \
-			rm -f $$build_log; \
-			exit 1; \
-		fi; \
-		if ! cmake --build $$build_dir --target ngram_static ngram_shared ngram_exe > $$build_log 2>&1; then \
-			cat $$build_log; \
-			rm -f $$build_log; \
-			exit 1; \
-		fi; \
-		rm -f $$build_log; \
+			-G Ninja -Wno-dev > /dev/null; \
 	fi
+	$(call cmake_build,$(BUILD_DIR)/$(subst /,-,$(1))-linux,$(CMAKE) -S . -B $(BUILD_DIR)/$(subst /,-,$(1))-linux -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_C_COMPILER=$(2) -DKC_NGRAM_BUILD_VERSION=$$ver -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(CURDIR)/$(BUILD_DIR)/$(subst /,-,$(1))-linux/out -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/linux -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/linux -G Ninja -Wno-dev > /dev/null)
 	@cp $(BUILD_DIR)/$(subst /,-,$(1))-linux/out/ngram $(BIN_DIR)/$(1)/linux/ngram
 	@echo "OK $(1)/linux"
 endef
@@ -171,44 +184,17 @@ loongarch64/linux:
 
 define windows_target
 	@mkdir -p $(BIN_DIR)/$(1)/windows
-	@cmake -S . -B $(BUILD_DIR)/$(1)-windows \
-		-DCMAKE_BUILD_TYPE=Release \
-		-DCMAKE_SYSTEM_NAME=Windows \
-		-DCMAKE_C_COMPILER=$(2) \
-		-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(CURDIR)/$(BUILD_DIR)/$(1)-windows/out \
-		-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/windows \
-		-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/windows \
-		-G Ninja -Wno-dev > /dev/null
-	@build_dir=$(BUILD_DIR)/$(1)-windows; \
-	build_log=$$build_dir/.ngram-version-build.log; \
-	ninja_log=$$build_dir/.ninja_log; \
-	before_lines=0; \
-	if [ -f "$$ninja_log" ]; then before_lines=$$(wc -l < "$$ninja_log"); fi; \
-	cmake --build $$build_dir; \
-	after_lines=0; \
-	if [ -f "$$ninja_log" ]; then after_lines=$$(wc -l < "$$ninja_log"); fi; \
-	if [ "$$after_lines" -gt "$$before_lines" ]; then \
-		build_version=$$(date +%s); \
-		if ! cmake -S . -B $$build_dir \
+	@if [ ! -f $(BUILD_DIR)/$(1)-windows/CMakeCache.txt ]; then \
+		$(CMAKE) -S . -B $(BUILD_DIR)/$(1)-windows \
 			-DCMAKE_BUILD_TYPE=Release \
 			-DCMAKE_SYSTEM_NAME=Windows \
 			-DCMAKE_C_COMPILER=$(2) \
-			-DKC_NGRAM_BUILD_VERSION=$$build_version \
-			-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(CURDIR)/$$build_dir/out \
+			-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(CURDIR)/$(BUILD_DIR)/$(1)-windows/out \
 			-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/windows \
 			-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/windows \
-			-G Ninja -Wno-dev > $$build_log 2>&1; then \
-			cat $$build_log; \
-			rm -f $$build_log; \
-			exit 1; \
-		fi; \
-		if ! cmake --build $$build_dir --target ngram_static ngram_shared ngram_exe > $$build_log 2>&1; then \
-			cat $$build_log; \
-			rm -f $$build_log; \
-			exit 1; \
-		fi; \
-		rm -f $$build_log; \
+			-G Ninja -Wno-dev > /dev/null; \
 	fi
+	$(call cmake_build,$(BUILD_DIR)/$(1)-windows,$(CMAKE) -S . -B $(BUILD_DIR)/$(1)-windows -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_C_COMPILER=$(2) -DKC_NGRAM_BUILD_VERSION=$$ver -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(CURDIR)/$(BUILD_DIR)/$(1)-windows/out -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/windows -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/windows -G Ninja -Wno-dev > /dev/null)
 	@cp $(BUILD_DIR)/$(1)-windows/out/ngram.exe $(BIN_DIR)/$(1)/windows/ngram.exe
 	@cp $(BUILD_DIR)/$(1)-windows/out/libngram.dll $(BIN_DIR)/$(1)/windows/libngram.dll
 	@echo "OK $(1)/windows"
@@ -224,46 +210,18 @@ i686/windows:
 
 define android_target
 	@mkdir -p $(BIN_DIR)/$(1)/android
-	@cmake -S . -B $(BUILD_DIR)/$(1)-android \
-		-DCMAKE_BUILD_TYPE=Release \
-		-DCMAKE_TOOLCHAIN_FILE=$(NDK_TOOLCHAIN) \
-		-DANDROID_ABI=$(2) \
-		-DANDROID_PLATFORM=android-21 \
-		-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(CURDIR)/$(BUILD_DIR)/$(1)-android/out \
-		-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/android \
-		-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/android \
-		-G Ninja -Wno-dev > /dev/null
-	@build_dir=$(BUILD_DIR)/$(1)-android; \
-	build_log=$$build_dir/.ngram-version-build.log; \
-	ninja_log=$$build_dir/.ninja_log; \
-	before_lines=0; \
-	if [ -f "$$ninja_log" ]; then before_lines=$$(wc -l < "$$ninja_log"); fi; \
-	cmake --build $$build_dir; \
-	after_lines=0; \
-	if [ -f "$$ninja_log" ]; then after_lines=$$(wc -l < "$$ninja_log"); fi; \
-	if [ "$$after_lines" -gt "$$before_lines" ]; then \
-		build_version=$$(date +%s); \
-		if ! cmake -S . -B $$build_dir \
+	@if [ ! -f $(BUILD_DIR)/$(1)-android/CMakeCache.txt ]; then \
+		$(CMAKE) -S . -B $(BUILD_DIR)/$(1)-android \
 			-DCMAKE_BUILD_TYPE=Release \
 			-DCMAKE_TOOLCHAIN_FILE=$(NDK_TOOLCHAIN) \
 			-DANDROID_ABI=$(2) \
 			-DANDROID_PLATFORM=android-21 \
-			-DKC_NGRAM_BUILD_VERSION=$$build_version \
-			-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(CURDIR)/$$build_dir/out \
+			-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(CURDIR)/$(BUILD_DIR)/$(1)-android/out \
 			-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/android \
 			-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/android \
-			-G Ninja -Wno-dev > $$build_log 2>&1; then \
-			cat $$build_log; \
-			rm -f $$build_log; \
-			exit 1; \
-		fi; \
-		if ! cmake --build $$build_dir --target ngram_static ngram_shared ngram_exe > $$build_log 2>&1; then \
-			cat $$build_log; \
-			rm -f $$build_log; \
-			exit 1; \
-		fi; \
-		rm -f $$build_log; \
+			-G Ninja -Wno-dev > /dev/null; \
 	fi
+	$(call cmake_build,$(BUILD_DIR)/$(1)-android,$(CMAKE) -S . -B $(BUILD_DIR)/$(1)-android -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$(NDK_TOOLCHAIN) -DANDROID_ABI=$(2) -DANDROID_PLATFORM=android-21 -DKC_NGRAM_BUILD_VERSION=$$ver -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$(CURDIR)/$(BUILD_DIR)/$(1)-android/out -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/android -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(CURDIR)/$(BIN_DIR)/$(1)/android -G Ninja -Wno-dev > /dev/null)
 	@cp $(BUILD_DIR)/$(1)-android/out/ngram $(BIN_DIR)/$(1)/android/ngram
 	@echo "OK $(1)/android"
 endef
