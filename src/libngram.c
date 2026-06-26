@@ -50,9 +50,16 @@ typedef struct {
     kc_ngram_signal_callback_t cb;
 } kc_ngram_signal_entry_t;
 
-static kc_ngram_signal_entry_t *g_signal_handlers = NULL;
-static int g_n_signal_handlers = 0;
-static int g_signal_handlers_capacity = 0;
+static kc_ngram_t **g_signal_ctx_list = NULL;
+static int g_signal_ctx_cap = 0;
+static int g_signal_ctx_count = 0;
+
+struct kc_ngram {
+    kc_ngram_signal_entry_t *signal_handlers;
+    int n_signal_handlers;
+    int signal_handlers_capacity;
+    volatile sig_atomic_t stop_requested;
+};
 
 typedef struct {
     size_t byte_start;
@@ -456,53 +463,100 @@ void kc_ngram_options_free(kc_ngram_options_t *opts) {
 }
 
 /**
- * Registers or unregisters a callback for a numeric signal ID.
- * @param sig Numeric signal identifier.
- * @param cb Callback, or NULL to unregister.
+ * Initialize a new ngram context.
+ * @param out Pointer to receive the context pointer.
  * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
  */
-int kc_ngram_on_signal(int sig, kc_ngram_signal_callback_t cb) {
+int kc_ngram_open(kc_ngram_t **out) {
+    kc_ngram_t *ctx;
+    if (!out) return KC_NGRAM_ERROR;
+    ctx = (kc_ngram_t *)calloc(1, sizeof(kc_ngram_t));
+    if (!ctx) return KC_NGRAM_ERROR;
+    *out = ctx;
+    return KC_NGRAM_OK;
+}
+
+/**
+ * Release an ngram context.
+ * @param ctx Context pointer.
+ * @return None.
+ */
+void kc_ngram_close(kc_ngram_t *ctx) {
     int i;
-    for (i = 0; i < g_n_signal_handlers; i++) {
-        if (g_signal_handlers[i].sig == sig) {
+    if (!ctx) return;
+    for (i = 0; i < g_signal_ctx_count; i++) {
+        if (g_signal_ctx_list[i] == ctx) {
+            g_signal_ctx_list[i] = g_signal_ctx_list[--g_signal_ctx_count];
+            break;
+        }
+    }
+    free(ctx->signal_handlers);
+    free(ctx);
+}
+
+/**
+ * Request stop for a specific ngram context.
+ * @param ctx Context pointer.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_stop(kc_ngram_t *ctx) {
+    if (!ctx) return KC_NGRAM_ERROR;
+    ctx->stop_requested = 1;
+    return KC_NGRAM_OK;
+}
+
+/**
+ * Register a handler for a library-level signal number.
+ * @param ctx ngram context.
+ * @param sig Application-defined signal number.
+ * @param cb Callback to invoke.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_on_signal(kc_ngram_t *ctx, int sig, kc_ngram_signal_callback_t cb) {
+    int i;
+    if (!ctx) return KC_NGRAM_ERROR;
+    for (i = 0; i < ctx->n_signal_handlers; i++) {
+        if (ctx->signal_handlers[i].sig == sig) {
             if (cb) {
-                g_signal_handlers[i].cb = cb;
+                ctx->signal_handlers[i].cb = cb;
             } else {
-                int tail = g_n_signal_handlers - i - 1;
+                int tail = ctx->n_signal_handlers - i - 1;
                 if (tail > 0) {
-                    memmove(&g_signal_handlers[i], &g_signal_handlers[i + 1],
+                    memmove(&ctx->signal_handlers[i], &ctx->signal_handlers[i + 1],
                             (size_t)tail * sizeof(kc_ngram_signal_entry_t));
                 }
-                g_n_signal_handlers--;
+                ctx->n_signal_handlers--;
             }
             return KC_NGRAM_OK;
         }
     }
     if (!cb) return KC_NGRAM_OK;
-    if (g_n_signal_handlers >= g_signal_handlers_capacity) {
-        int new_cap = g_signal_handlers_capacity ? g_signal_handlers_capacity * 2 : 4;
-        kc_ngram_signal_entry_t *p = (kc_ngram_signal_entry_t *)realloc(g_signal_handlers,
+    if (ctx->n_signal_handlers >= ctx->signal_handlers_capacity) {
+        int new_cap = ctx->signal_handlers_capacity ? ctx->signal_handlers_capacity * 2 : 4;
+        kc_ngram_signal_entry_t *p = (kc_ngram_signal_entry_t *)realloc(ctx->signal_handlers,
             (size_t)new_cap * sizeof(kc_ngram_signal_entry_t));
         if (!p) return KC_NGRAM_ERROR;
-        g_signal_handlers = p;
-        g_signal_handlers_capacity = new_cap;
+        ctx->signal_handlers = p;
+        ctx->signal_handlers_capacity = new_cap;
     }
-    g_signal_handlers[g_n_signal_handlers].sig = sig;
-    g_signal_handlers[g_n_signal_handlers].cb = cb;
-    g_n_signal_handlers++;
+    ctx->signal_handlers[ctx->n_signal_handlers].sig = sig;
+    ctx->signal_handlers[ctx->n_signal_handlers].cb = cb;
+    ctx->n_signal_handlers++;
     return KC_NGRAM_OK;
 }
 
 /**
- * Dispatches a signal to the registered callback.
- * @param sig Numeric signal identifier.
- * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ * Raise a library-level signal.
+ * @param ctx ngram context.
+ * @param sig Signal number to raise.
+ * @return KC_NGRAM_OK if handled, or KC_NGRAM_ERROR if no handler.
  */
-int kc_ngram_raise_signal(int sig) {
+int kc_ngram_raise_signal(kc_ngram_t *ctx, int sig) {
     int i;
-    for (i = 0; i < g_n_signal_handlers; i++) {
-        if (g_signal_handlers[i].sig == sig) {
-            g_signal_handlers[i].cb();
+    if (!ctx) return KC_NGRAM_ERROR;
+    for (i = 0; i < ctx->n_signal_handlers; i++) {
+        if (ctx->signal_handlers[i].sig == sig) {
+            ctx->signal_handlers[i].cb(ctx);
             return KC_NGRAM_OK;
         }
     }
@@ -510,31 +564,57 @@ int kc_ngram_raise_signal(int sig) {
 }
 
 /**
- * Registers the default signal listener for all known signals.
- * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ * Set the internal signal-listener context.
+ * @param ctx ngram context.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR if ctx is NULL.
  */
-int kc_ngram_listen_signals(void) {
+int kc_ngram_listen_signals(kc_ngram_t *ctx) {
+    if (!ctx) return KC_NGRAM_ERROR;
+    if (g_signal_ctx_count >= g_signal_ctx_cap) {
+        int new_cap = g_signal_ctx_cap ? g_signal_ctx_cap * 2 : 4;
+        kc_ngram_t **new_list = (kc_ngram_t **)realloc(g_signal_ctx_list,
+            (size_t)new_cap * sizeof(kc_ngram_t *));
+        if (!new_list) return KC_NGRAM_ERROR;
+        g_signal_ctx_list = new_list;
+        g_signal_ctx_cap = new_cap;
+    }
+    g_signal_ctx_list[g_signal_ctx_count++] = ctx;
     return KC_NGRAM_OK;
 }
 
 /**
- * Default signal listener that dispatches to registered callbacks.
- * @param sig Received signal number.
- * @return No return value.
+ * Generic signal-listener compatible with signal() / sigaction().
+ * @param sig OS signal number.
+ * @return None.
  */
 void kc_ngram_signal_listener(int sig) {
-    if (kc_ngram_raise_signal(sig) == 0)
-        return;
+    int i;
+    for (i = 0; i < g_signal_ctx_count; i++) {
+        if (g_signal_ctx_list[i] &&
+            kc_ngram_raise_signal(g_signal_ctx_list[i], sig) == 0)
+            return;
+    }
     signal(sig, SIG_DFL);
     raise(sig);
 }
 
 /**
- * Registers the default signal listener for a specific signal ID.
- * @param sig_id Signal ID to listen for.
+ * Wire an OS signal to the library signal listener.
+ * @param ctx ngram context.
+ * @param sig_id OS signal number.
  * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
  */
-int kc_ngram_listen_signal(int sig_id) {
+int kc_ngram_listen_signal(kc_ngram_t *ctx, int sig_id) {
+    if (!ctx) return KC_NGRAM_ERROR;
+    if (g_signal_ctx_count >= g_signal_ctx_cap) {
+        int new_cap = g_signal_ctx_cap ? g_signal_ctx_cap * 2 : 4;
+        kc_ngram_t **new_list = (kc_ngram_t **)realloc(g_signal_ctx_list,
+            (size_t)new_cap * sizeof(kc_ngram_t *));
+        if (!new_list) return KC_NGRAM_ERROR;
+        g_signal_ctx_list = new_list;
+        g_signal_ctx_cap = new_cap;
+    }
+    g_signal_ctx_list[g_signal_ctx_count++] = ctx;
 #ifdef _WIN32
     (void)sig_id;
 #else

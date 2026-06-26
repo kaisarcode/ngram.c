@@ -124,6 +124,43 @@ kc_test_run_pipe_case() {
     return 1
 }
 
+# Tests multi-context isolation: two contexts, stop one, other unaffected.
+# @return 0 on success, 1 on failure.
+kc_test_multi_context() {
+    tmpdir=$(mktemp -d)
+
+    {
+        printf '%s\n' '#include "ngram.h"'
+        printf '%s\n' '#include <stdio.h>'
+        printf '%s\n' 'int main(void) {'
+        printf '%s\n' '    kc_ngram_t *ctx1, *ctx2;'
+        printf '%s\n' '    if (kc_ngram_open(&ctx1) != KC_NGRAM_OK) return 1;'
+        printf '%s\n' '    if (kc_ngram_open(&ctx2) != KC_NGRAM_OK) { kc_ngram_close(ctx1); return 1; }'
+        printf '%s\n' '    if (kc_ngram_stop(NULL) != KC_NGRAM_ERROR) { kc_ngram_close(ctx1); kc_ngram_close(ctx2); return 2; }'
+        printf '%s\n' '    if (kc_ngram_stop(ctx1) != KC_NGRAM_OK) { kc_ngram_close(ctx1); kc_ngram_close(ctx2); return 3; }'
+        printf '%s\n' '    if (kc_ngram_stop(ctx2) != KC_NGRAM_OK) { kc_ngram_close(ctx1); kc_ngram_close(ctx2); return 4; }'
+        printf '%s\n' '    if (kc_ngram_stop(ctx1) != KC_NGRAM_OK) { kc_ngram_close(ctx1); kc_ngram_close(ctx2); return 5; }'
+        printf '%s\n' '    kc_ngram_close(ctx1); kc_ngram_close(ctx2);'
+        printf '%s\n' '    return 0;'
+        printf '%s\n' '}'
+    } > "$tmpdir/multictx.c"
+
+    cc -I "$PWD/src" "$tmpdir/multictx.c" -L"$PWD/bin/x86_64/linux" -lngram -o "$tmpdir/multictx" -Wl,-rpath,"$PWD/bin/x86_64/linux" || {
+        kc_test_fail "multi_context: compile failed"
+        rm -rf "$tmpdir"
+        return 1
+    }
+
+    if ! "$tmpdir/multictx"; then
+        kc_test_fail "multi_context: run failed"
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
+    rm -rf "$tmpdir"
+    kc_test_pass "multi_context"
+}
+
 # Runs the full validation suite for ngram traversal semantics.
 # @return 0 when all tests pass, 1 otherwise.
 kc_test_main() {
@@ -282,6 +319,8 @@ EOF
     kc_test_run_pipe_case "stdin input" "one two three" "$expected" "$BIN" -max 3 -min 3 || failed=$((failed + 1))
 
     kc_test_run_case "large stdin beyond fixed cap" "70001" bash -lc "awk 'BEGIN { for (i = 0; i < 70000; i++) printf \"a\"; }' | \"$BIN\" | wc -c | tr -d '[:space:]'" || failed=$((failed + 1))
+
+    kc_test_multi_context || failed=$((failed + 1))
 
     if [ "$failed" -eq 0 ]; then
         return 0

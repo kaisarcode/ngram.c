@@ -15,10 +15,13 @@
 
 #define KC_NGRAM_OK      0
 #define KC_NGRAM_ERROR  -1
+#define KC_NGRAM_ESTOP  -3
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct kc_ngram kc_ngram_t;
 
 /**
  * One emitted chunk.
@@ -61,7 +64,28 @@ typedef struct {
  */
 typedef int (*kc_ngram_visit_fn)(const kc_ngram_chunk_t *chunk, void *context);
 
-typedef void (*kc_ngram_signal_callback_t)(void);
+typedef void (*kc_ngram_signal_callback_t)(kc_ngram_t *ctx);
+
+/**
+ * Initialize a new ngram context.
+ * @param out Pointer to receive the context pointer.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_open(kc_ngram_t **out);
+
+/**
+ * Release an ngram context.
+ * @param ctx Context pointer.
+ * @return None.
+ */
+void kc_ngram_close(kc_ngram_t *ctx);
+
+/**
+ * Request stop for a specific ngram context.
+ * @param ctx Context pointer.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_stop(kc_ngram_t *ctx);
 
 /**
  * Fills one options structure with default values.
@@ -99,31 +123,40 @@ void kc_ngram_options_load_env(kc_ngram_options_t *opts);
 void kc_ngram_options_free(kc_ngram_options_t *opts);
 
 /**
- * Registers or unregisters a callback for a numeric signal ID.
+ * Register a handler for a library-level signal number.
+ * @param ctx ngram context.
+ * @param sig Application-defined signal number.
+ * @param cb Callback to invoke.
  * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
  */
-int kc_ngram_on_signal(int sig, kc_ngram_signal_callback_t cb);
+int kc_ngram_on_signal(kc_ngram_t *ctx, int sig, kc_ngram_signal_callback_t cb);
 
 /**
- * Dispatches a signal to the registered callback.
+ * Raise a library-level signal.
+ * @param ctx ngram context.
+ * @param sig Signal number to raise.
+ * @return KC_NGRAM_OK if handled, or KC_NGRAM_ERROR if no handler.
+ */
+int kc_ngram_raise_signal(kc_ngram_t *ctx, int sig);
+
+/**
+ * Set the internal signal-listener context.
+ * @param ctx ngram context.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR if ctx is NULL.
+ */
+int kc_ngram_listen_signals(kc_ngram_t *ctx);
+
+/**
+ * Wire an OS signal to the library signal listener.
+ * @param ctx ngram context.
+ * @param sig_id OS signal number.
  * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
  */
-int kc_ngram_raise_signal(int sig);
+int kc_ngram_listen_signal(kc_ngram_t *ctx, int sig_id);
 
 /**
- * Registers the default signal listener for all known signals.
- * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
- */
-int kc_ngram_listen_signals(void);
-
-/**
- * Registers the default signal listener for a specific signal ID.
- * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
- */
-int kc_ngram_listen_signal(int sig_id);
-
-/**
- * Default signal listener that dispatches to registered callbacks.
+ * Generic signal-listener compatible with signal() / sigaction().
+ * @param sig OS signal number.
  * @return None.
  */
 void kc_ngram_signal_listener(int sig);

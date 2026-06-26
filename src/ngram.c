@@ -1067,6 +1067,7 @@ static int kc_ngram_cli_visit(
 int main(int argc, char **argv) {
     kc_ngram_options_t options;
     kc_ngram_cli_context_t context;
+    kc_ngram_t *ngram_ctx;
     const char *text;
     char *stdin_text;
     int result;
@@ -1077,7 +1078,12 @@ int main(int argc, char **argv) {
     }
 
     kc_ngram_options_load_env(&options);
-    kc_ngram_listen_signals();
+
+    ngram_ctx = NULL;
+    if (kc_ngram_open(&ngram_ctx) != KC_NGRAM_OK) {
+        return 1;
+    }
+    kc_ngram_listen_signals(ngram_ctx);
 
     context.command = NULL;
     text = NULL;
@@ -1208,5 +1214,6 @@ int main(int argc, char **argv) {
 cleanup:
     free(stdin_text);
     kc_ngram_options_free(&options);
+    kc_ngram_close(ngram_ctx);
     return result;
 }
