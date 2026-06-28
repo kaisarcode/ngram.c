@@ -11,7 +11,8 @@
 
 #include "ngram.h"
 
-#ifndef KC_NGRAM_BUILD_VERSION
+#if !defined(KC_NGRAM_BUILD_VERSION) || KC_NGRAM_BUILD_VERSION + 0 == 0
+#undef KC_NGRAM_BUILD_VERSION
 #define KC_NGRAM_BUILD_VERSION 0ULL
 #endif
 

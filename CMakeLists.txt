@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.14)
 project(ngram C)
 
 set(CMAKE_C_STANDARD 11)
-set(KC_NGRAM_BUILD_VERSION "0" CACHE STRING "ngram build version timestamp")
+if(NOT DEFINED KC_NGRAM_BUILD_VERSION)
+    set(KC_NGRAM_BUILD_VERSION 0)
+endif()
 
 option(NGRAM_NATIVE "Enable native CPU optimizations" OFF)
 option(NGRAM_BUILD_TESTS "Build ngram tests" OFF)
@@ -28,9 +30,8 @@ endif()
 set(NGRAM_SOURCES src/libngram.c)
 set(NGRAM_HEADERS src/ngram.h)
 
-set_property(
-    SOURCE src/libngram.c
-    APPEND PROPERTY COMPILE_DEFINITIONS KC_NGRAM_BUILD_VERSION=${KC_NGRAM_BUILD_VERSION}
+set_source_files_properties(src/libngram.c PROPERTIES
+    COMPILE_DEFINITIONS KC_NGRAM_BUILD_VERSION=${KC_NGRAM_BUILD_VERSION}
 )
 
 if(NOT NGRAM_TEST_EXTERNAL_ARTIFACTS)
