@@ -9,6 +9,8 @@ ANDROID_HOME  ?= $(HOME)/.local/share/android-sdk
 NDK_VERSION   ?= 27.2.12479018
 NDK_DIR       := $(ANDROID_HOME)/ndk/$(NDK_VERSION)
 NDK_TOOLCHAIN := $(NDK_DIR)/build/cmake/android.toolchain.cmake
+WINE ?= wine
+WINE_X86_64_CC ?= x86_64-w64-mingw32-gcc
 
 BUILD_DIR := .build
 BIN_DIR   := bin
@@ -91,10 +93,19 @@ NATIVE_PLATFORM := windows
 endif
 
 NATIVE_TARGET := $(NATIVE_ARCH)/$(NATIVE_PLATFORM)
+NATIVE_EXE_EXT :=
+NATIVE_SHARED_NAME := libngram.so
+NATIVE_IMPORT_LIBRARY :=
+
+ifeq ($(NATIVE_PLATFORM),windows)
+NATIVE_EXE_EXT := .exe
+NATIVE_SHARED_NAME := libngram.dll
+NATIVE_IMPORT_LIBRARY := -DNGRAM_TEST_IMPORT_LIBRARY=$(CURDIR)/$(BIN_DIR)/$(NATIVE_TARGET)/libngram.dll.a
+endif
 
 .DEFAULT_GOAL := native
 
-.PHONY: native all test clean \
+.PHONY: native all test wine clean \
 	x86_64/linux x86_64/windows \
 	i686/linux i686/windows \
 	aarch64/linux aarch64/android \
@@ -235,7 +246,61 @@ armv7/android:
 ## Utility
 
 test:
-	@sh test.sh
+	@if [ -n "$(filter wine,$(MAKECMDGOALS))" ]; then \
+		if ! command -v $(WINE) >/dev/null 2>&1; then \
+			echo "Missing Wine runtime: $(WINE)" >&2; \
+			exit 1; \
+		fi; \
+		if ! command -v $(WINE_X86_64_CC) >/dev/null 2>&1; then \
+			echo "Missing Windows cross-compiler: $(WINE_X86_64_CC)" >&2; \
+			exit 1; \
+		fi; \
+		if [ ! -f $(BIN_DIR)/x86_64/windows/libngram.dll ] || [ ! -f $(BIN_DIR)/x86_64/windows/libngram.dll.a ] || [ ! -f $(BIN_DIR)/x86_64/windows/ngram.exe ]; then \
+			echo "Missing Windows artifacts. Run 'make x86_64/windows' or 'make all' first." >&2; \
+			exit 1; \
+		fi; \
+		if [ ! -f $(BUILD_DIR)/test-wine/CMakeCache.txt ]; then \
+			cmake -S . -B $(BUILD_DIR)/test-wine \
+				-DCMAKE_BUILD_TYPE=Release \
+				-DCMAKE_SYSTEM_NAME=Windows \
+				-DCMAKE_C_COMPILER=$(WINE_X86_64_CC) \
+				-DNGRAM_BUILD_TESTS=ON \
+				-DNGRAM_TEST_SHARED_LIBRARY=$(CURDIR)/$(BIN_DIR)/x86_64/windows/libngram.dll \
+				-DNGRAM_TEST_IMPORT_LIBRARY=$(CURDIR)/$(BIN_DIR)/x86_64/windows/libngram.dll.a \
+				-DNGRAM_TEST_CLI=$(CURDIR)/$(BIN_DIR)/x86_64/windows/ngram.exe \
+				-DCMAKE_CROSSCOMPILING_EMULATOR=$(WINE) \
+				-G Ninja -Wno-dev > /dev/null; \
+		fi; \
+		cmake --build $(BUILD_DIR)/test-wine --target ngram_contract_test || exit 1; \
+		ctest --test-dir $(BUILD_DIR)/test-wine --output-on-failure; \
+	else \
+		if [ "$(NATIVE_ARCH)" = "unsupported" ] || [ "$(NATIVE_PLATFORM)" = "unsupported" ]; then \
+			echo "Unsupported native test target $(HOST_ARCH)/$(HOST_SYSTEM)" >&2; \
+			exit 1; \
+		fi; \
+		if [ ! -f $(BIN_DIR)/$(NATIVE_TARGET)/$(NATIVE_SHARED_NAME) ] || [ ! -f $(BIN_DIR)/$(NATIVE_TARGET)/ngram$(NATIVE_EXE_EXT) ]; then \
+			echo "Missing native artifacts. Run 'make' first." >&2; \
+			exit 1; \
+		fi; \
+		if [ ! -f $(BUILD_DIR)/test/CMakeCache.txt ]; then \
+			cmake -S . -B $(BUILD_DIR)/test \
+				-DCMAKE_BUILD_TYPE=Release \
+				-DNGRAM_BUILD_TESTS=ON \
+				-DNGRAM_TEST_SHARED_LIBRARY=$(CURDIR)/$(BIN_DIR)/$(NATIVE_TARGET)/$(NATIVE_SHARED_NAME) \
+				-DNGRAM_TEST_CLI=$(CURDIR)/$(BIN_DIR)/$(NATIVE_TARGET)/ngram$(NATIVE_EXE_EXT) \
+				$(NATIVE_IMPORT_LIBRARY) \
+				-G Ninja -Wno-dev > /dev/null; \
+		fi; \
+		cmake --build $(BUILD_DIR)/test --target ngram_contract_test || exit 1; \
+		ctest --test-dir $(BUILD_DIR)/test --output-on-failure; \
+	fi
+
+wine:
+	@if [ -z "$(filter test,$(MAKECMDGOALS))" ]; then \
+		echo "Use 'make test wine' to run tests through Wine." >&2; \
+		exit 1; \
+	fi
+	@:
 
 clean:
 	@rm -rf $(BUILD_DIR)
