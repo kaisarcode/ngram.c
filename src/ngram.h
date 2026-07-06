@@ -53,6 +53,8 @@ typedef struct {
     int max_tokens;
     int min_tokens;
     const char *separators;
+    char *separators_storage;
+    char *ctrl_path;
 } kc_ngram_options_t;
 
 /**
@@ -65,6 +67,16 @@ typedef struct {
 typedef int (*kc_ngram_visit_fn)(const kc_ngram_chunk_t *chunk, void *context);
 
 typedef void (*kc_ngram_signal_callback_t)(kc_ngram_t *ctx);
+
+/**
+ * Control command callback.
+ * @param ctx Context pointer.
+ * @param fd Control connection file descriptor.
+ * @param argc Number of arguments.
+ * @param argv Argument vector.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+typedef int (*kc_ngram_ctrl_callback_t)(kc_ngram_t *ctx, int fd, int argc, char **argv);
 
 /**
  * Initialize a new ngram context.
@@ -88,11 +100,26 @@ void kc_ngram_close(kc_ngram_t *ctx);
 int kc_ngram_stop(kc_ngram_t *ctx);
 
 /**
+ * Checks whether a stop request has been raised on the context.
+ * @param ctx Context pointer.
+ * @return 1 when stop was requested, or 0 otherwise.
+ */
+int kc_ngram_stop_requested(kc_ngram_t *ctx);
+
+/**
  * Fills one options structure with default values.
  * @param options Destination options structure.
  * @return 0 on success, or -1 on invalid input.
  */
 int kc_ngram_options_default(kc_ngram_options_t *options);
+
+/**
+ * Attach one mutable options struct to the context runtime.
+ * @param ctx Context pointer.
+ * @param options Runtime options, or NULL to restore internal defaults.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_configure(kc_ngram_t *ctx, kc_ngram_options_t *options);
 
 /**
  * Executes descending sliding-window traversal for the given input text.
@@ -160,6 +187,45 @@ int kc_ngram_listen_signal(kc_ngram_t *ctx, int sig_id);
  * @return None.
  */
 void kc_ngram_signal_listener(int sig);
+
+/**
+ * Register a control command handler.
+ * @param ctx Context pointer.
+ * @param cmd Control command name.
+ * @param cb Callback function, or NULL to remove.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_ctrl_on(kc_ngram_t *ctx, const char *cmd, kc_ngram_ctrl_callback_t cb);
+
+/**
+ * Remove a control command handler.
+ * @param ctx Context pointer.
+ * @param cmd Control command name.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_ctrl_off(kc_ngram_t *ctx, const char *cmd);
+
+/**
+ * Open a Unix domain socket for control commands.
+ * @param ctx Context pointer.
+ * @param path Socket path.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_ctrl_open(kc_ngram_t *ctx, const char *path);
+
+/**
+ * Close the control socket and active control connections.
+ * @param ctx Context pointer.
+ * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_ctrl_close(kc_ngram_t *ctx);
+
+/**
+ * Poll the control socket and dispatch pending control commands.
+ * @param ctx Context pointer.
+ * @return Number of handled commands, or KC_NGRAM_ERROR on failure.
+ */
+int kc_ngram_ctrl_poll(kc_ngram_t *ctx);
 
 /**
  * Retrieves the library build version as a Unix timestamp.

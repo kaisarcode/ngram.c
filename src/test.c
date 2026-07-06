@@ -19,6 +19,8 @@
 #define getpid _getpid
 #else
 #include <signal.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 #endif
 
@@ -484,6 +486,319 @@ static int case_multictx(void) {
 }
 
 /**
+ * Connect one client socket to the control endpoint.
+ * @param sock_path Unix socket path.
+ * @return Connected socket fd, or -1 on failure.
+ */
+#ifndef _WIN32
+static int connect_ctrl_client(const char *sock_path) {
+    struct sockaddr_un addr;
+    int client_fd;
+
+    client_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (client_fd < 0) {
+        return -1;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, sock_path, sizeof(addr.sun_path) - 1U);
+    addr.sun_path[sizeof(addr.sun_path) - 1U] = '\0';
+
+    if (connect(client_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(client_fd);
+        return -1;
+    }
+
+    return client_fd;
+}
+#endif
+
+/**
+ * Read one control response into the provided buffer.
+ * @param fd Connected socket fd.
+ * @param buf Destination buffer.
+ * @param size Buffer size.
+ * @return Number of bytes read, or -1 on failure.
+ */
+#ifndef _WIN32
+static int read_ctrl_response(int fd, char *buf, size_t size) {
+    ssize_t n;
+
+    if (fd < 0 || buf == NULL || size < 2U) {
+        return -1;
+    }
+
+    n = read(fd, buf, size - 1U);
+    if (n < 0) {
+        return -1;
+    }
+
+    buf[n] = '\0';
+    return (int)n;
+}
+#endif
+
+/**
+ * Tests control socket HELP command.
+ * @return 0 on success, 1 on failure.
+ */
+static int case_ctrl_help(void) {
+#ifndef _WIN32
+    kc_ngram_t *ctx;
+    char sock_path[128];
+    char buf[256];
+    int client_fd;
+    int rc;
+
+    snprintf(sock_path, sizeof(sock_path), "/tmp/ngram_ctrl_help_%d.sock", (int)getpid());
+    unlink(sock_path);
+    if (kc_ngram_open(&ctx) != KC_NGRAM_OK) {
+        return 1;
+    }
+    if (kc_ngram_ctrl_open(ctx, sock_path) != KC_NGRAM_OK) {
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    client_fd = connect_ctrl_client(sock_path);
+    if (client_fd < 0) {
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    kc_ngram_ctrl_poll(ctx);
+    if (write(client_fd, "HELP\n", 5) != 5) {
+        close(client_fd);
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    kc_ngram_ctrl_poll(ctx);
+    rc = 0;
+    rc += expect_true("ctrl help returns OK",
+        read_ctrl_response(client_fd, buf, sizeof(buf)) > 0 && strncmp(buf, "OK", 2) == 0);
+    rc += expect_true("ctrl help lists HELP",
+        strstr(buf, "HELP") != NULL);
+    close(client_fd);
+    kc_ngram_close(ctx);
+    unlink(sock_path);
+    return rc == 0 ? 0 : 1;
+#else
+    return expect_true("ctrl test is skipped on Windows", 1);
+#endif
+}
+
+/**
+ * Tests control socket STOP command.
+ * @return 0 on success, 1 on failure.
+ */
+static int case_ctrl_stop(void) {
+#ifndef _WIN32
+    kc_ngram_t *ctx;
+    char sock_path[128];
+    char buf[256];
+    int client_fd;
+    int rc;
+
+    snprintf(sock_path, sizeof(sock_path), "/tmp/ngram_ctrl_stop_%d.sock", (int)getpid());
+    unlink(sock_path);
+    if (kc_ngram_open(&ctx) != KC_NGRAM_OK) {
+        return 1;
+    }
+    if (kc_ngram_ctrl_open(ctx, sock_path) != KC_NGRAM_OK) {
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    client_fd = connect_ctrl_client(sock_path);
+    if (client_fd < 0) {
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    kc_ngram_ctrl_poll(ctx);
+    if (write(client_fd, "STOP\n", 5) != 5) {
+        close(client_fd);
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    kc_ngram_ctrl_poll(ctx);
+    rc = 0;
+    rc += expect_true("ctrl stop returns OK",
+        read_ctrl_response(client_fd, buf, sizeof(buf)) > 0 && strncmp(buf, "OK", 2) == 0);
+    rc += expect_true("ctrl stop sets stop_requested",
+        kc_ngram_stop_requested(ctx) == 1);
+    close(client_fd);
+    kc_ngram_close(ctx);
+    unlink(sock_path);
+    return rc == 0 ? 0 : 1;
+#else
+    return expect_true("ctrl test is skipped on Windows", 1);
+#endif
+}
+
+/**
+ * Tests control socket GET command.
+ * @return 0 on success, 1 on failure.
+ */
+static int case_ctrl_get(void) {
+#ifndef _WIN32
+    kc_ngram_options_t opts;
+    kc_ngram_t *ctx;
+    char sock_path[128];
+    char buf[256];
+    int client_fd;
+    int rc;
+
+    if (kc_ngram_options_default(&opts) != 0) {
+        return 1;
+    }
+    opts.max_tokens = 7;
+    opts.min_tokens = 2;
+    opts.separators = ",";
+
+    snprintf(sock_path, sizeof(sock_path), "/tmp/ngram_ctrl_get_%d.sock", (int)getpid());
+    unlink(sock_path);
+    if (kc_ngram_open(&ctx) != KC_NGRAM_OK) {
+        return 1;
+    }
+    if (kc_ngram_configure(ctx, &opts) != KC_NGRAM_OK) {
+        kc_ngram_close(ctx);
+        return 1;
+    }
+    if (kc_ngram_ctrl_open(ctx, sock_path) != KC_NGRAM_OK) {
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    client_fd = connect_ctrl_client(sock_path);
+    if (client_fd < 0) {
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    rc = 0;
+    kc_ngram_ctrl_poll(ctx);
+    if (write(client_fd, "GET max\n", 8) != 8) {
+        close(client_fd);
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    kc_ngram_ctrl_poll(ctx);
+    rc += expect_true("ctrl get max returns 7",
+        read_ctrl_response(client_fd, buf, sizeof(buf)) > 0 && strstr(buf, "7") != NULL);
+    if (write(client_fd, "GET min\n", 8) != 8) {
+        close(client_fd);
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    kc_ngram_ctrl_poll(ctx);
+    rc += expect_true("ctrl get min returns 2",
+        read_ctrl_response(client_fd, buf, sizeof(buf)) > 0 && strstr(buf, "2") != NULL);
+    if (write(client_fd, "GET sep\n", 8) != 8) {
+        close(client_fd);
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    kc_ngram_ctrl_poll(ctx);
+    rc += expect_true("ctrl get sep returns comma",
+        read_ctrl_response(client_fd, buf, sizeof(buf)) > 0 && strstr(buf, ",") != NULL);
+    close(client_fd);
+    kc_ngram_close(ctx);
+    kc_ngram_options_free(&opts);
+    unlink(sock_path);
+    return rc == 0 ? 0 : 1;
+#else
+    return expect_true("ctrl test is skipped on Windows", 1);
+#endif
+}
+
+/**
+ * Tests control socket SET command.
+ * @return 0 on success, 1 on failure.
+ */
+static int case_ctrl_set(void) {
+#ifndef _WIN32
+    kc_ngram_options_t opts;
+    kc_ngram_t *ctx;
+    char sock_path[128];
+    char buf[256];
+    int client_fd;
+    int rc;
+
+    if (kc_ngram_options_default(&opts) != 0) {
+        return 1;
+    }
+
+    snprintf(sock_path, sizeof(sock_path), "/tmp/ngram_ctrl_set_%d.sock", (int)getpid());
+    unlink(sock_path);
+    if (kc_ngram_open(&ctx) != KC_NGRAM_OK) {
+        return 1;
+    }
+    if (kc_ngram_configure(ctx, &opts) != KC_NGRAM_OK) {
+        kc_ngram_close(ctx);
+        return 1;
+    }
+    if (kc_ngram_ctrl_open(ctx, sock_path) != KC_NGRAM_OK) {
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    client_fd = connect_ctrl_client(sock_path);
+    if (client_fd < 0) {
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    rc = 0;
+    kc_ngram_ctrl_poll(ctx);
+    if (write(client_fd, "SET max 5\n", 10) != 10) {
+        close(client_fd);
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    kc_ngram_ctrl_poll(ctx);
+    rc += expect_true("ctrl set max returns OK",
+        read_ctrl_response(client_fd, buf, sizeof(buf)) > 0 && strncmp(buf, "OK", 2) == 0);
+    rc += expect_int("ctrl set max updates options", 5, opts.max_tokens);
+    if (write(client_fd, "SET min 2\n", 10) != 10) {
+        close(client_fd);
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    kc_ngram_ctrl_poll(ctx);
+    rc += expect_true("ctrl set min returns OK",
+        read_ctrl_response(client_fd, buf, sizeof(buf)) > 0 && strncmp(buf, "OK", 2) == 0);
+    rc += expect_int("ctrl set min updates options", 2, opts.min_tokens);
+    if (write(client_fd, "SET sep ,\n", 10) != 10) {
+        close(client_fd);
+        kc_ngram_close(ctx);
+        unlink(sock_path);
+        return 1;
+    }
+    kc_ngram_ctrl_poll(ctx);
+    rc += expect_true("ctrl set sep returns OK",
+        read_ctrl_response(client_fd, buf, sizeof(buf)) > 0 && strncmp(buf, "OK", 2) == 0);
+    rc += expect_true("ctrl set sep updates options",
+        opts.separators != NULL && strcmp(opts.separators, ",") == 0);
+    close(client_fd);
+    kc_ngram_close(ctx);
+    kc_ngram_options_free(&opts);
+    unlink(sock_path);
+    return rc == 0 ? 0 : 1;
+#else
+    return expect_true("ctrl test is skipped on Windows", 1);
+#endif
+}
+
+/**
  * Runs one libngram public API test case.
  * @param argc Argument count.
  * @param argv Argument vector.
@@ -509,6 +824,10 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "listen-signal") == 0) return case_listen_signal();
     if (strcmp(argv[1], "signal-listener") == 0) return case_signal_listener();
     if (strcmp(argv[1], "multictx") == 0) return case_multictx();
+    if (strcmp(argv[1], "ctrl-help") == 0) return case_ctrl_help();
+    if (strcmp(argv[1], "ctrl-stop") == 0) return case_ctrl_stop();
+    if (strcmp(argv[1], "ctrl-get") == 0) return case_ctrl_get();
+    if (strcmp(argv[1], "ctrl-set") == 0) return case_ctrl_set();
     fprintf(stderr, "unknown test case: %s\n", argv[1]);
     return 2;
 }
