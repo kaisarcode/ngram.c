@@ -9,7 +9,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-#include "ngram.h"
+#include "libngram.h"
 
 #include <errno.h>
 #include <stdio.h>

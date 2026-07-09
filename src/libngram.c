@@ -9,7 +9,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-#include "ngram.h"
+#include "libngram.h"
 
 #if !defined(KC_NGRAM_BUILD_VERSION) || KC_NGRAM_BUILD_VERSION + 0 == 0
 #undef KC_NGRAM_BUILD_VERSION

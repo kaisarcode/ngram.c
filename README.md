@@ -92,7 +92,7 @@ printf 'GET max\n' | socat - UNIX-CONNECT:/tmp/ngram.sock
 ## Public API
 
 ```c
-#include "ngram.h"
+#include "libngram.h"
 
 int my_visitor(const kc_ngram_chunk_t *chunk, void *context) {
     printf("%.*s\n", (int)(chunk->byte_end - chunk->byte_start), chunk->input + chunk->byte_start);

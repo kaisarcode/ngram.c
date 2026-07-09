@@ -7,7 +7,7 @@
  * License: https://www.gnu.org/licenses/gpl-3.0.html
  */
 
-#include "ngram.h"
+#include "libngram.h"
 
 #include <stdio.h>
 #include <stdlib.h>
