@@ -43,7 +43,6 @@ echo "The quick brown fox" | ./bin/x86_64/linux/ngram
 | `--max, -max <n>` | Maximum tokens per block |
 | `--min, -min <n>` | Minimum tokens per block |
 | `--sep, -sep <s>` | Custom separator characters |
-| `--ctrl <path>` | Open a Unix domain control socket |
 | `--cmd, -cmd <cmd>` | Execute command for each chunk |
 | `--help, -h` | Show help and usage |
 | `--version, -v` | Show version |
@@ -62,32 +61,6 @@ The quick
 quick brown
 brown fox
 ```
-
-### Control Socket
-
-When started with `--ctrl <path>` or `KC_NGRAM_CTRL`, `ngram` opens a Unix domain socket and accepts line-based control commands.
-
-Supported commands:
-
-| Command | Description |
-| :--- | :--- |
-| `HELP` | List registered commands |
-| `STOP` | Request graceful stop |
-| `GET max` | Read current maximum token window |
-| `GET min` | Read current minimum token window |
-| `GET sep` | Read current separator set |
-| `SET max <n>` | Update maximum token window |
-| `SET min <n>` | Update minimum token window |
-| `SET sep <s>` | Update separator set |
-
-Example:
-
-```bash
-./bin/x86_64/linux/ngram --ctrl /tmp/ngram.sock "a b c d"
-printf 'GET max\n' | socat - UNIX-CONNECT:/tmp/ngram.sock
-```
-
----
 
 ## Public API
 

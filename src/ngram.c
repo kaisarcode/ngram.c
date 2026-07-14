@@ -64,32 +64,6 @@ static char *kc_ngram_strdup(const char *text) {
 }
 
 /**
- * Replace the owned control path in one options struct.
- * @param options Options to update.
- * @param path Replacement control path.
- * @return 0 on success, or -1 on failure.
- */
-static int kc_ngram_options_set_ctrl_path(
-    kc_ngram_options_t *options,
-    const char *path
-) {
-    char *copy;
-
-    if (options == NULL || path == NULL) {
-        return -1;
-    }
-
-    copy = kc_ngram_strdup(path);
-    if (copy == NULL) {
-        return -1;
-    }
-
-    free(options->ctrl_path);
-    options->ctrl_path = copy;
-    return 0;
-}
-
-/**
  * Releases all parsed command arguments.
  * @param args Argument list.
  * @return No return value.
@@ -646,14 +620,12 @@ static void kc_ngram_help(void) {
     printf("  --max, -max <n>     Maximum tokens per block\n");
     printf("  --min, -min <n>     Minimum tokens per block\n");
     printf("  --sep, -sep <s>     Custom separator characters\n");
-    printf("  --ctrl <path>       Open a Unix control socket\n");
     printf("  --cmd, -cmd <cmd>   Execute command for each chunk\n");
     printf("  -h, --help          Show help\n");
     printf("  -v, --version       Show version\n\n");
     printf("Notes:\n");
     printf("  Each chunk is printed before --cmd is evaluated.\n");
     printf("  A span closes when the command produces stdout.\n");
-    printf("  Control commands: HELP, STOP, GET {max|min|sep}, SET {max|min|sep}.\n");
 }
 
 /**
@@ -1061,11 +1033,9 @@ static int kc_ngram_cli_visit(
     }
 
     cli_context = (kc_ngram_cli_context_t *)context;
-    if (cli_context != NULL && cli_context->ngram != NULL) {
-        kc_ngram_ctrl_poll(cli_context->ngram);
-        if (kc_ngram_stop_requested(cli_context->ngram)) {
-            return KC_NGRAM_ESTOP;
-        }
+    if (cli_context != NULL && cli_context->ngram != NULL &&
+        kc_ngram_stop_requested(cli_context->ngram)) {
+        return KC_NGRAM_ESTOP;
     }
 
     chunk_data = kc_ngram_chunk_data(chunk);
@@ -1090,11 +1060,8 @@ static int kc_ngram_cli_visit(
         return 0;
     }
 
-    if (cli_context->ngram != NULL) {
-        kc_ngram_ctrl_poll(cli_context->ngram);
-        if (kc_ngram_stop_requested(cli_context->ngram)) {
-            return KC_NGRAM_ESTOP;
-        }
+    if (cli_context->ngram != NULL && kc_ngram_stop_requested(cli_context->ngram)) {
+        return KC_NGRAM_ESTOP;
     }
 
     return kc_ngram_run_command(cli_context->command, chunk);
@@ -1202,21 +1169,6 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        if (strcmp(argv[i], "--ctrl") == 0) {
-            if (i + 1 >= argc) {
-                result = kc_ngram_fail_usage("Missing value for --ctrl.");
-                goto cleanup;
-            }
-
-            if (kc_ngram_options_set_ctrl_path(&options, argv[i + 1]) != KC_NGRAM_OK) {
-                result = 1;
-                goto cleanup;
-            }
-
-            i++;
-            continue;
-        }
-
         if (
             strcmp(argv[i], "--cmd") == 0 ||
             strcmp(argv[i], "-cmd") == 0
@@ -1249,16 +1201,7 @@ int main(int argc, char **argv) {
         goto cleanup;
     }
 
-    if (options.ctrl_path != NULL) {
-        if (kc_ngram_ctrl_open(ngram_ctx, options.ctrl_path) != KC_NGRAM_OK) {
-            fprintf(stderr, "Error: failed to open control socket at %s\n", options.ctrl_path);
-            result = 1;
-            goto cleanup;
-        }
-    }
-
     if (text == NULL) {
-        kc_ngram_ctrl_poll(ngram_ctx);
         if (kc_ngram_read_stdin(&stdin_text) != 0) {
             result = 1;
             goto cleanup;
@@ -1271,13 +1214,11 @@ int main(int argc, char **argv) {
         goto cleanup;
     }
 
-    kc_ngram_ctrl_poll(ngram_ctx);
     if (kc_ngram_stop_requested(ngram_ctx)) {
         goto cleanup;
     }
 
     result = kc_ngram_execute(text, &options, kc_ngram_cli_visit, &context);
-    kc_ngram_ctrl_poll(ngram_ctx);
     if (result == KC_NGRAM_ESTOP) {
         result = 0;
         goto cleanup;
