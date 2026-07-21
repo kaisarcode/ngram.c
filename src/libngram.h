@@ -64,8 +64,6 @@ typedef struct {
  */
 typedef int (*kc_ngram_visit_fn)(const kc_ngram_chunk_t *chunk, void *context);
 
-typedef void (*kc_ngram_signal_callback_t)(kc_ngram_t *ctx);
-
 /**
  * Initialize a new ngram context.
  * @param out Pointer to receive the context pointer.
@@ -136,45 +134,6 @@ void kc_ngram_options_load_env(kc_ngram_options_t *opts);
  * @return None.
  */
 void kc_ngram_options_free(kc_ngram_options_t *opts);
-
-/**
- * Register a handler for a library-level signal number.
- * @param ctx ngram context.
- * @param sig Application-defined signal number.
- * @param cb Callback to invoke.
- * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
- */
-int kc_ngram_on_signal(kc_ngram_t *ctx, int sig, kc_ngram_signal_callback_t cb);
-
-/**
- * Raise a library-level signal.
- * @param ctx ngram context.
- * @param sig Signal number to raise.
- * @return KC_NGRAM_OK if handled, or KC_NGRAM_ERROR if no handler.
- */
-int kc_ngram_raise_signal(kc_ngram_t *ctx, int sig);
-
-/**
- * Set the internal signal-listener context.
- * @param ctx ngram context.
- * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR if ctx is NULL.
- */
-int kc_ngram_listen_signals(kc_ngram_t *ctx);
-
-/**
- * Wire an OS signal to the library signal listener.
- * @param ctx ngram context.
- * @param sig_id OS signal number.
- * @return KC_NGRAM_OK on success, or KC_NGRAM_ERROR on failure.
- */
-int kc_ngram_listen_signal(kc_ngram_t *ctx, int sig_id);
-
-/**
- * Generic signal-listener compatible with signal() / sigaction().
- * @param sig OS signal number.
- * @return None.
- */
-void kc_ngram_signal_listener(int sig);
 
 /**
  * Retrieves the library build version as a Unix timestamp.

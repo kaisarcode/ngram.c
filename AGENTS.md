@@ -142,10 +142,10 @@ cost is explicit and sequential.
 Do not hide these costs behind unbounded concurrency. If limits are needed,
 define them as explicit traversal options and public behavior.
 
-## Signals and Concurrency
+## Stop State and Concurrency
 
-Context stop flags and callbacks are local. The global list only bridges OS
-signals. Do not expand it into process supervision.
+Context stop flags are local. Applications own signal handling and may request
+a context stop through `kc_ngram_stop()`.
 
 Traversal calls are reentrant with independent per-call state. This does not
 promise concurrent mutation of one context or borrowed options.

@@ -13,38 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef _WIN32
-#include <signal.h>
-#endif
-
-static int signal_count = 0;
-static kc_ngram_t *signal_ctx_seen = NULL;
-
-/**
- * Records one signal callback invocation.
- * @param ctx Context supplied by the library.
- * @return None.
- */
-static void count_signal(kc_ngram_t *ctx) {
-    if (ctx != NULL) {
-        signal_count++;
-        signal_ctx_seen = ctx;
-    }
-}
-
-static int signal_count_b = 0;
-
-/**
- * Records one replacement signal callback invocation.
- * @param ctx Context supplied by the library.
- * @return None.
- */
-static void count_signal_b(kc_ngram_t *ctx) {
-    if (ctx != NULL) {
-        signal_count_b++;
-    }
-}
-
 /**
  * Visitor that counts emitted chunks.
  */
@@ -307,149 +275,6 @@ static int case_execute_span(void) {
 }
 
 /**
- * Tests kc_ngram_on_signal.
- * @return 0 on success, 1 on failure.
- */
-static int case_on_signal(void) {
-    kc_ngram_t *ctx;
-    int rc;
-    int i;
-
-    rc = 0;
-    signal_count = 0;
-    signal_count_b = 0;
-    rc += expect_int("on_signal(NULL) returns ERROR", KC_NGRAM_ERROR,
-        kc_ngram_on_signal(NULL, 1, count_signal));
-    if (kc_ngram_open(&ctx) != KC_NGRAM_OK) return 1;
-    rc += expect_int("remove missing handler returns OK", KC_NGRAM_OK,
-        kc_ngram_on_signal(ctx, 1, NULL));
-    rc += expect_int("register handler returns OK", KC_NGRAM_OK,
-        kc_ngram_on_signal(ctx, 1, count_signal));
-    rc += expect_int("raise registered handler returns OK", KC_NGRAM_OK,
-        kc_ngram_raise_signal(ctx, 1));
-    rc += expect_int("handler was invoked", 1, signal_count);
-    rc += expect_int("replace handler returns OK", KC_NGRAM_OK,
-        kc_ngram_on_signal(ctx, 1, count_signal_b));
-    signal_count = 0;
-    signal_count_b = 0;
-    rc += expect_int("raise replaced handler returns OK", KC_NGRAM_OK,
-        kc_ngram_raise_signal(ctx, 1));
-    rc += expect_int("old handler was not invoked", 0, signal_count);
-    rc += expect_int("replacement handler was invoked", 1, signal_count_b);
-    for (i = 0; i < 8; i++) {
-        rc += expect_int("register growth handler returns OK", KC_NGRAM_OK,
-            kc_ngram_on_signal(ctx, 200 + i, count_signal));
-    }
-    signal_count = 0;
-    rc += expect_int("raise growth handler returns OK", KC_NGRAM_OK,
-        kc_ngram_raise_signal(ctx, 207));
-    rc += expect_int("growth handler was invoked", 1, signal_count);
-    rc += expect_int("remove handler returns OK", KC_NGRAM_OK,
-        kc_ngram_on_signal(ctx, 1, NULL));
-    rc += expect_int("raise removed handler returns ERROR", KC_NGRAM_ERROR,
-        kc_ngram_raise_signal(ctx, 1));
-    kc_ngram_close(ctx);
-    return rc == 0 ? 0 : 1;
-}
-
-/**
- * Tests kc_ngram_raise_signal.
- * @return 0 on success, 1 on failure.
- */
-static int case_raise_signal(void) {
-    kc_ngram_t *ctx;
-    int rc;
-
-    rc = 0;
-    signal_count = 0;
-    signal_ctx_seen = NULL;
-    rc += expect_int("raise_signal(NULL) returns ERROR", KC_NGRAM_ERROR,
-        kc_ngram_raise_signal(NULL, 1));
-    if (kc_ngram_open(&ctx) != KC_NGRAM_OK) return 1;
-    rc += expect_int("raise unhandled signal returns ERROR", KC_NGRAM_ERROR,
-        kc_ngram_raise_signal(ctx, 1));
-    rc += expect_int("register signal handler", KC_NGRAM_OK,
-        kc_ngram_on_signal(ctx, 1, count_signal));
-    rc += expect_int("raise handled signal returns OK", KC_NGRAM_OK,
-        kc_ngram_raise_signal(ctx, 1));
-    rc += expect_int("raise_signal invokes handler", 1, signal_count);
-    rc += expect_true("raise_signal passes same context", signal_ctx_seen == ctx);
-    kc_ngram_close(ctx);
-    return rc == 0 ? 0 : 1;
-}
-
-/**
- * Tests kc_ngram_listen_signals.
- * @return 0 on success, 1 on failure.
- */
-static int case_listen_signals(void) {
-    kc_ngram_t *ctx;
-    int rc;
-
-    rc = 0;
-    signal_count = 0;
-    signal_ctx_seen = NULL;
-    rc += expect_int("listen_signals(NULL) returns ERROR", KC_NGRAM_ERROR,
-        kc_ngram_listen_signals(NULL));
-    if (kc_ngram_open(&ctx) != KC_NGRAM_OK) return 1;
-    rc += expect_int("register listener callback", KC_NGRAM_OK,
-        kc_ngram_on_signal(ctx, 44, count_signal));
-    rc += expect_int("listen_signals registers context", KC_NGRAM_OK,
-        kc_ngram_listen_signals(ctx));
-    kc_ngram_signal_listener(44);
-    rc += expect_int("listener dispatched callback", 1, signal_count);
-    rc += expect_true("listener dispatched correct context", signal_ctx_seen == ctx);
-    kc_ngram_close(ctx);
-    return rc == 0 ? 0 : 1;
-}
-
-/**
- * Tests kc_ngram_listen_signal.
- * @return 0 on success, 1 on failure.
- */
-static int case_listen_signal(void) {
-    kc_ngram_t *ctx;
-    int rc;
-
-    rc = 0;
-    rc += expect_int("listen_signal(NULL) returns ERROR", KC_NGRAM_ERROR,
-        kc_ngram_listen_signal(NULL, 1));
-    if (kc_ngram_open(&ctx) != KC_NGRAM_OK) return 1;
-#ifdef _WIN32
-    rc += expect_int("listen_signal accepts ctx", KC_NGRAM_OK,
-        kc_ngram_listen_signal(ctx, 2));
-#else
-    rc += expect_int("listen_signal accepts ctx", KC_NGRAM_OK,
-        kc_ngram_listen_signal(ctx, SIGUSR1));
-#endif
-    kc_ngram_close(ctx);
-    return rc == 0 ? 0 : 1;
-}
-
-/**
- * Tests kc_ngram_signal_listener.
- * @return 0 on success, 1 on failure.
- */
-static int case_signal_listener(void) {
-    kc_ngram_t *ctx;
-    int rc;
-
-    rc = 0;
-    signal_count = 0;
-    signal_ctx_seen = NULL;
-    if (kc_ngram_open(&ctx) != KC_NGRAM_OK) return 1;
-    rc += expect_int("register listener handler", KC_NGRAM_OK,
-        kc_ngram_on_signal(ctx, 55, count_signal));
-    rc += expect_int("listen_signals registers ctx", KC_NGRAM_OK,
-        kc_ngram_listen_signals(ctx));
-    kc_ngram_signal_listener(55);
-    rc += expect_int("signal_listener invokes handler", 1, signal_count);
-    rc += expect_true("signal_listener passes ctx", signal_ctx_seen == ctx);
-    kc_ngram_close(ctx);
-    return rc == 0 ? 0 : 1;
-}
-
-/**
  * Tests two contexts coexist.
  * @return 0 on success, 1 on failure.
  */
@@ -498,11 +323,6 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "stop") == 0) return case_stop();
     if (strcmp(argv[1], "execute") == 0) return case_execute();
     if (strcmp(argv[1], "execute-span") == 0) return case_execute_span();
-    if (strcmp(argv[1], "on-signal") == 0) return case_on_signal();
-    if (strcmp(argv[1], "raise-signal") == 0) return case_raise_signal();
-    if (strcmp(argv[1], "listen-signals") == 0) return case_listen_signals();
-    if (strcmp(argv[1], "listen-signal") == 0) return case_listen_signal();
-    if (strcmp(argv[1], "signal-listener") == 0) return case_signal_listener();
     if (strcmp(argv[1], "multictx") == 0) return case_multictx();
     fprintf(stderr, "unknown test case: %s\n", argv[1]);
     return 2;

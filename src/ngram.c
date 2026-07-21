@@ -1092,8 +1092,6 @@ int main(int argc, char **argv) {
     if (kc_ngram_open(&ngram_ctx) != KC_NGRAM_OK) {
         return 1;
     }
-    kc_ngram_listen_signals(ngram_ctx);
-
     context.ngram = ngram_ctx;
     context.command = NULL;
     text = NULL;

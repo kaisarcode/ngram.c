@@ -62,8 +62,7 @@ reentrant.
 ## Context Role
 
 The traversal function does not require a context. Contexts provide owned
-default options, an optional borrowed mutable options pointer, stop state, and
-signal callbacks for CLI and embedding lifecycle needs.
+default options, an optional borrowed mutable options pointer, and stop state.
 
 `kc_ngram_configure()` borrows the supplied options. Passing NULL restores the
 context-owned defaults. The context does not copy or release caller options.
@@ -108,7 +107,7 @@ background worker.
 ## Portability
 
 The library is portable C11. Platform-specific code is confined to CLI process
-creation, pipes, handle quoting, and signals.
+creation, pipes, and handle quoting.
 
 Traversal order, offsets, callback decisions, and closure behavior must remain
 identical across platforms.
